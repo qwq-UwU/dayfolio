@@ -366,7 +366,8 @@ function deleteTag(index){
   else indices.set(i,indices.size)
  })
  const count=db.items.filter(t=>removed.has(t.cat)).length
- if(!confirm('删除「'+db.cats[index]+'」及其中的 '+(removed.size-1)+' 个子标签、'+count+' 项任务？'))return
+ const childCount=removed.size-1
+ if((childCount>0 || count>0) && !confirm('删除「'+db.cats[index]+'」及其中的 '+childCount+' 个子标签、'+count+' 项任务？'))return
  const previousTag=currentTag
  const remapKey=k=>k?'t:'+indices.get(Number(k.slice(2))):''
  const order={},parents={},accents={},states={},palette={}
