@@ -1,3 +1,45 @@
+const undoButton=$('undoCompletion')
+let lastCompletion=null, undoTimer
+function clearCompletionUndo(){
+ clearTimeout(undoTimer)
+ lastCompletion=null
+ undoButton.hidden=true
+}
+function setTaskDone(task,done){
+ if(Boolean(task.done)===done)return
+ task.done=done
+ if(done){
+  clearCompletionUndo()
+  lastCompletion={id:task.id,expires:Date.now()+10000}
+  undoButton.setAttribute('aria-label','撤回完成：'+task.name)
+  undoButton.hidden=false
+  undoTimer=setTimeout(clearCompletionUndo,10000)
+ }else if(lastCompletion?.id===task.id)clearCompletionUndo()
+}
+undoButton.onclick=()=>{
+ const recent=lastCompletion
+ clearCompletionUndo()
+ if(!recent || Date.now()>=recent.expires)return
+ const task=db.items.find(t=>t.id===recent.id)
+ if(task?.done){setTaskDone(task,false);save()}
+}
+function completionControl(task,calendar=false){
+ const control=calendar?el('input','calendar-check'):el('button','complete-task',task.done?'已完成':'完成')
+ control.setAttribute('aria-label',(task.done?'取消完成：':'完成：')+task.name)
+ const toggle=()=>{setTaskDone(task,!task.done);save()}
+ if(calendar){
+  control.type='checkbox'
+  control.checked=Boolean(task.done)
+  control.onpointerdown=e=>e.stopPropagation()
+  control.onclick=e=>e.stopPropagation()
+  control.onchange=toggle
+ }else{
+  control.type='button'
+  control.setAttribute('aria-pressed',String(Boolean(task.done)))
+  control.onclick=toggle
+ }
+ return control
+}
 function render(){
  renderCategoryTags()
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
@@ -14,7 +56,19 @@ function render(){
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
- if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
+ if(!monthly){
+  for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){
+   const row=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row')
+   const name=el('button',t.done?'finished':'',t.name)
+   name.onclick=()=>edit(t)
+   const badge=el('span','category-badge',db.cats[t.cat])
+   styleCategory(badge,t.cat)
+   row.append(name,badge,el('small','',t.date+' '+range(t)),completionControl(t))
+   view.append(row)
+  }
+  if(!items.length)view.append(el('p','','暂无任务'))
+  return
+ }
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -68,14 +122,18 @@ function edit(t,date,minute=540){
  $('catField').replaceChildren(...db.cats.map((name,i)=>new Option(name,i)))
  $('catField').value=t?.cat??(listLayout?currentTag:null)??0
  $('done').checked=t?.done||false;$('del').hidden=!t;$('editor').showModal()}
-$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value,done:$('done').checked};if($('allDay').checked){data.start=null;data.end=null}
+$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value};if($('allDay').checked){data.start=null;data.end=null}
  else{
   data.start=minutes($('startTime').value)
   data.end=minutes($('endTime').value)
   if(data.end<=data.start)data.end+=1440
  }
- if(editing)Object.assign(editing,data);else db.items.push({id:crypto.randomUUID(),...data});$('editor').close();save()}
-$('del').onclick=()=>{if(confirm('删除这个任务？')){db.items=db.items.filter(t=>t!==editing);$('editor').close();save()}}
+ const task=editing || {id:crypto.randomUUID(),done:false}
+ Object.assign(task,data)
+ if(!editing)db.items.push(task)
+ setTaskDone(task,$('done').checked)
+ $('editor').close();save()}
+$('del').onclick=()=>{if(confirm('删除这个任务？')){if(lastCompletion?.id===editing.id)clearCompletionUndo();db.items=db.items.filter(t=>t!==editing);$('editor').close();save()}}
 $('cancel').onclick=()=>$('editor').close();$('newTask').onclick=()=>edit(null,mode==='calendar'?key(cursor):key(now))
 for(const id of ['calendar','tasks'])$(id).onclick=()=>{mode=id;render()}
 for(const button of $('periods').children)button.onclick=()=>setPeriod(button.dataset.period)
@@ -154,12 +212,15 @@ function updateTimeFields(){
 $('allDay').onchange=updateTimeFields
 for(const id of ['startTime','endTime'])$(id).oninput=updateTimeFields
 function eventButton(t,timed=false,offset=0){
- const b=el('button','event'+(t.done?' finished':''))
+ const b=el('div','event'+(t.done?' finished':''))
  b.dataset.taskId=t.id
  styleCategory(b,t.cat)
- b.setAttribute('aria-label',t.name+' '+range(t))
- if(timed)b.append(el('strong','',t.name),el('span','event-time',range(t)))
- else b.textContent=(offset?'续至 '+clock(t.end)+' ':t.start==null?'':clock(t.start)+' ')+t.name
+ const open=el('button','event-open')
+ open.type='button'
+ open.setAttribute('aria-label',t.name+' '+range(t))
+ if(timed)open.append(el('strong','',t.name),el('span','event-time',range(t)))
+ else open.textContent=(offset?'续至 '+clock(t.end)+' ':t.start==null?'':clock(t.start)+' ')+t.name
+ b.append(completionControl(t,true),open)
  b.onclick=e=>{e.stopPropagation();edit(t)}
  return b
 }

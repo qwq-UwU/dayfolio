@@ -289,7 +289,9 @@ function renderCategoryTags(){
    const button=el('button','folder-task'+(task.done?' finished':''))
    button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
    button.onclick=()=>edit(task)
-   return button
+   const row=el('div','folder-task-row')
+   row.append(button,completionControl(task))
+   return row
   })
  }
  function categoryTag(name,i){

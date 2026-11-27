@@ -215,8 +215,9 @@ function timelinePreview(body,grid){
    }
    if(!block){
     block=el('div','event drag-preview')
+    block.inert=true
     styleCategory(block,task.cat)
-    block.append(el('strong','',task.name),el('span','preview-time'))
+    block.append(completionControl(task,true),el('strong','',task.name),el('span','preview-time'))
     col.append(block)
     blocks.set(col,block)
    }
