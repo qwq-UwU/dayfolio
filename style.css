@@ -115,3 +115,19 @@
 .folder-children:empty { display:none; }
 .inherited-state { display:block; margin-bottom:4px; letter-spacing:0; }
 #taskTags { max-height:55vh; }
+#treeWidth { width:auto; font-size:11px; padding:3px 7px; }
+.tree-actions { margin:0 6px 5px; }
+section .tree-actions button { width:auto; padding:4px 6px; }
+#treeRoot { display:none; text-align:center; padding:7px; border:1px dashed #8ca998; border-radius:5px; font-size:12px; }
+.moving-item #treeRoot { display:block; }
+#categorySection [data-drop=inside] { background:#e0eddf; outline:2px solid #58826b; outline-offset:-2px; }
+#categorySection [data-drop=before] { box-shadow:inset 0 3px #366b50; }
+#categorySection [data-drop=after] { box-shadow:inset 0 -3px #366b50; }
+.folder-row[draggable], .folder-name, #taskTags .task-tag { cursor:grab; }
+body.wide-tree aside { width:50vw; }
+body.wide-tree #taskTags { max-height:68vh; }
+@media(max-width:760px){
+ body.wide-tree aside { width:100%; }
+ body.wide-tree #categorySection { display:block; }
+ body.wide-tree #taskTags { height:50dvh; max-height:50dvh; }
+}

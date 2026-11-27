@@ -20,6 +20,7 @@ let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {cats:['�
 let mode='calendar',editing=null
 db.folders??=[]
 db.categoryParents??={}
+db.treeOrder??={}
 if(db.lists){
  delete db.lists
  for(const task of db.items)delete task.list
@@ -60,6 +61,20 @@ function styleCategory(node,category){
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
 const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
+function orderedChildren(parent){
+ const keys=db.folders.filter(f=>f.parent===parent).map(f=>'f:'+f.id)
+ db.cats.forEach((_,i)=>{if((db.categoryParents[i]??'')===parent)keys.push('t:'+i)})
+ const saved=db.treeOrder[parent]??[]
+ return [...saved.filter(key=>keys.includes(key)),...keys.filter(key=>!saved.includes(key))]
+}
+function setTreeWidth(wide){
+ document.body.classList.toggle('wide-tree',wide)
+ $('treeWidth').textContent=wide?'收起':'放大'
+ $('treeWidth').setAttribute('aria-pressed',String(wide))
+ localStorage.setItem('dayfolio.wideTree',String(wide))
+}
+$('treeWidth').onclick=()=>setTreeWidth(!document.body.classList.contains('wide-tree'))
+setTreeWidth(localStorage.getItem('dayfolio.wideTree')==='true')
 function effectiveState(category){
  let state=db.categoryStates[category]??'shown'
  let id=db.categoryParents[category]
@@ -112,6 +127,73 @@ $('folderForm').onsubmit=e=>{
 function renderCategoryTags(){
  const host=$('taskTags')
  const scroll=host.scrollTop
+ let source=null,highlight=null
+ function clearMark(){if(highlight)delete highlight.dataset.drop;highlight=null}
+ function stop(){
+  source=null
+  clearMark()
+  $('categorySection').classList.remove('moving-item')
+ }
+ function allow(parent){
+  if(!source)return false
+  if(!source.folder)return true
+  for(let id=parent;id;){
+   if(id===source.folder.id)return false
+   id=db.folders.find(f=>f.id===id)?.parent
+  }
+  return !db.folders.some(f=>f!==source.folder && f.parent===parent && f.name===source.folder.name)
+ }
+ function wireDrop(node,resolve){
+  function target(e){
+   if(!source)return null
+   const dest=resolve(e)
+   return dest.key!==source.key && allow(dest.parent)?dest:null
+  }
+  node.ondragover=e=>{
+   clearMark()
+   const dest=target(e)
+   if(!dest)return
+   e.preventDefault()
+   e.dataTransfer.dropEffect='move'
+   highlight=node
+   node.dataset.drop=dest.where
+  }
+  node.ondragleave=e=>{if(highlight===node && !node.contains(e.relatedTarget))clearMark()}
+  node.ondrop=e=>{
+   const dest=target(e)
+   if(!dest)return
+   e.preventDefault()
+   const order=orderedChildren(dest.parent).filter(key=>key!==source.key)
+   const index=dest.where==='inside'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
+   order.splice(index,0,source.key)
+   if(source.parent!==dest.parent && db.treeOrder[source.parent]){
+    db.treeOrder[source.parent]=db.treeOrder[source.parent].filter(k=>k!==source.key)
+   }
+   db.treeOrder[dest.parent]=order
+   if(source.folder)source.folder.parent=dest.parent
+   else db.categoryParents[source.category]=dest.parent
+   if(dest.where==='inside' && dest.parent)db.folders.find(f=>f.id===dest.parent).closed=false
+   stop()
+   save()
+  }
+ }
+ function wireItem(node,item){
+  node.draggable=true
+  node.ondragstart=e=>{
+   source=item
+   e.dataTransfer.effectAllowed='move'
+   e.dataTransfer.setData('text/plain',node.textContent)
+   $('categorySection').classList.add('moving-item')
+  }
+  node.ondragend=stop
+  wireDrop(node,e=>{
+   const rect=node.getBoundingClientRect()
+   const fraction=(e.clientY-rect.top)/rect.height
+   if(item.folder && fraction>=0.22 && fraction<=0.78)return {key:item.key,parent:item.folder.id,where:'inside'}
+   return {key:item.key,parent:item.parent,where:fraction<0.5?'before':'after'}
+  })
+ }
+ wireDrop($('treeRoot'),()=>({parent:'',where:'inside'}))
  function categoryTag(name,i){
   const tag=el('button','task-tag')
   const own=db.categoryStates[i]??'shown',state=effectiveState(i)
@@ -135,7 +217,7 @@ function renderCategoryTags(){
   return tag
  }
  function branch(parent,inherited){
-  const nodes=[]
+  const nodes=new Map()
   for(const folder of db.folders.filter(f=>f.parent===parent)){
    const group=el('div','folder-group'),row=el('div','folder-row')
    const expand=el('button','folder-expand',folder.closed?'▸':'▾')
@@ -145,6 +227,7 @@ function renderCategoryTags(){
    const name=el('button','folder-name',folder.name)
    name.title='编辑文件夹'
    name.onclick=()=>openFolder(folder)
+   wireItem(row,{key:'f:'+folder.id,parent,folder})
    row.append(expand,name)
    const control=el('select','folder-state')
    control.setAttribute('aria-label',folder.name+'的统一设置')
@@ -158,17 +241,18 @@ function renderCategoryTags(){
     children.append(...branch(folder.id,inherited || (folder.state==='inherit'?null:folder.state)))
     group.append(children)
    }
-   nodes.push(group)
+   nodes.set('f:'+folder.id,group)
   }
   db.cats.forEach((name,i)=>{
    if((db.categoryParents[i]??'')!==parent)return
    const tag=categoryTag(name,i)
+   wireItem(tag,{key:'t:'+i,parent,category:i})
    if(inherited){
     tag.title='上层'+stateLabels[inherited]+' · 标签自身'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[db.categoryStates[i]??'shown']
    }
-   nodes.push(tag)
+   nodes.set('t:'+i,tag)
   })
-  return nodes
+  return orderedChildren(parent).map(key=>nodes.get(key))
  }
  host.replaceChildren(...branch('',null))
  host.scrollTop=scroll
