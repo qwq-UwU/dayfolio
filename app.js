@@ -20,20 +20,48 @@ let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {lists:['�
 let mode='calendar',filter=null,editing=null
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
-function groups(type,host){$(host).replaceChildren(...db[host].map((name,i)=>{const b=el('button',filter?.type===type&&filter.i===i?'active':'');const icon=el('span',type==='cat'?'dot':'',type==='list'?'☰　 ':'');icon.style.backgroundColor=type==='cat'?colors[i%4][1]:'';b.append(icon,name);b.onclick=()=>{filter=filter?.type===type&&filter.i===i?null:{type,i};render()};return b}))}
+function renderLists(){
+ $('lists').replaceChildren(...db.lists.map((name,i)=>{
+  const selected=filter?.i===i
+  const b=el('button',selected?'active':'','☰　 '+name)
+  b.onclick=()=>{filter=selected?null:{type:'list',i};render()}
+  return b
+ }))
+}
+function renderTaskTags(){
+ const host=$('taskTags')
+ const scroll=host.scrollTop
+ host.replaceChildren(...db.items.map((task,i)=>{
+  const tag=el('button','task-tag')
+  const [bg,ink]=colors[task.cat%colors.length]
+  tag.style.setProperty('--bg',bg)
+  tag.style.setProperty('--ink',ink)
+  tag.setAttribute('aria-pressed',String(!task.hidden))
+  const mark=el('span','tag-mark',task.hidden?'':'✓')
+  mark.setAttribute('aria-hidden','true')
+  tag.append(mark,el('span','tag-name',task.name))
+  tag.onclick=()=>{
+   task.hidden=!task.hidden
+   save()
+   host.children[i]?.focus({preventScroll:true})
+  }
+  return tag
+ }))
+ host.scrollTop=scroll
+}
 function render(){
- groups('list','lists');groups('cat','cats')
+ renderLists();renderTaskTags()
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
  $('title').textContent=$('where').textContent=title
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
  $('month').textContent=monthly?cursor.getFullYear()+'年 '+(cursor.getMonth()+1)+'月':'全部任务'
  for(const id of ['prev','next','today'])$(id).hidden=!monthly
- $('reset').hidden=!filter
+ $('reset').hidden=!filter && !db.items.some(task=>task.hidden)
  const periods=document.getElementById("periods");periods.hidden=!monthly
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
  $('prev').setAttribute('aria-label','向前'+unit);$('next').setAttribute('aria-label','向后'+unit)
- const items=db.items.filter(t=>!filter||t[filter.type]===filter.i)
+ const items=db.items.filter(t=>!t.hidden && (!filter||t.list===filter.i))
  const view=$('view')
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
@@ -117,8 +145,25 @@ for(const [id,step] of [['prev',-1],['next',1]])$(id).onclick=()=>{
  render()
 }
 $('today').onclick=()=>{cursor=new Date();render()}
-$('reset').onclick=()=>{filter=null;render()}
-for(const [id,group,label] of [['addList','lists','列表'],['addCat','cats','分类']])$(id).onclick=()=>{const n=prompt('新建'+label+'名称')?.trim();if(n&&!db[group].includes(n)){db[group].push(n);save()}}
+$('reset').onclick=()=>{
+ filter=null
+ for(const task of db.items)delete task.hidden
+ save()
+}
+$('addList').onclick=()=>{
+ const name=prompt('新建列表名称')?.trim()
+ if(name&&!db.lists.includes(name)){db.lists.push(name);save()}
+}
+$('addCat').onclick=()=>{
+ const name=prompt('新建分类名称')?.trim()
+ if(!name)return
+ if(!db.cats.includes(name)){
+  db.cats.push(name)
+  $('catField').add(new Option(name,db.cats.length-1))
+  save()
+ }
+ $('catField').value=db.cats.indexOf(name)
+}
 render()
 
 function toggleNight(){
