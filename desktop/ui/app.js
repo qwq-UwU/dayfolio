@@ -108,7 +108,11 @@ function edit(t,date,minute=540,category=listLayout && currentTag?Number(current
  $('done').checked=Boolean(t?.done)
  $('done').parentElement.hidden=Boolean(t?.done)
  $('restoreTask').hidden=!t?.done
- $('del').hidden=!t;$('editor').showModal()}
+ $('del').hidden=!t
+ $('editor').querySelector('h2').textContent=t?'任务详情':'新建任务'
+ $('editor').showModal()
+ $('nameField').focus()
+}
 $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const cat=$('catField').value;const data={name,date:$('dateField').value,cat:cat===''?null:Number(cat)};if($('allDay').checked){data.start=null;data.end=null}
  else{
   data.start=minutes($('startTime').value)
@@ -119,7 +123,9 @@ $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim()
  Object.assign(task,data)
  if(!editing)db.items.push(task)
  setTaskDone(task,$('done').checked)
- $('editor').close();save()}
+ const previousTag=currentTag
+ if(!editing && task.cat==null && listLayout && currentTag)enterTag('')
+ $('editor').close();save({previousTag})}
 $('restoreTask').onclick=()=>{
  if(!editing?.done)return
  setTaskDone(editing,false)
@@ -134,12 +140,12 @@ function deleteTask(task){
  if($('editor').open && editing===task)$('editor').close()
  save()
 }
-function newTaskForTag(category){
+function newTaskForTag(category=''){
  edit(null,key(mode==='calendar'?cursor:now),540,category)
 }
 $('del').onclick=()=>deleteTask(editing)
 $('cancel').onclick=()=>$('editor').close()
-$('newTask').onclick=()=>newTaskForTag()
+$('newTask').onclick=()=>newTaskForTag('')
 for(const id of ['calendar','tasks'])$(id).onclick=()=>{mode=id;render()}
 for(const button of $('periods').children)button.onclick=()=>setPeriod(button.dataset.period)
 function setPeriod(value){

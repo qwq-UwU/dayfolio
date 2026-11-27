@@ -277,7 +277,7 @@ function renderCategoryTags(){
    else if(expandedTags.has(i))expandedTags.delete(i)
    else expandedTags.add(i)
    db.expandedTags=[...expandedTags]
-   save()
+   save({record:false})
   }
   tag.append(mark,open)
   mark.onclick=()=>{
@@ -360,42 +360,32 @@ $('colorCancel').onclick=()=>$('colorEditor').close()
 $('addCat').onclick=()=>openCategory()
 function deleteTag(index){
  const key='t:'+index,parent=db.categoryParents[index]??''
- const location=parent?'「'+db.cats[parent.slice(2)]+'」':'顶层'
- const children=orderedChildren(key)
- const notes=['删除标签「'+db.cats[index]+'」？']
- if(children.length)notes.push(children.length+' 个子标签将移到'+location+'。')
- const count=db.items.filter(t=>t.cat===index).length
- if(count)notes.push(count+' 项直属任务将移到'+(parent?location:'「未分类」')+'。')
- if(!confirm(notes.join('\n')))return
-
- // Task categories are positions in cats. Apply the same shift to every reference.
- const shift=i=>i>index?i-1:i
- const shiftKey=k=>k?'t:'+shift(Number(k.slice(2))):''
- const order={...db.treeOrder}
- order[parent]=orderedChildren(parent).flatMap(k=>k===key?children:[k])
- delete order[key]
- db.treeOrder=Object.fromEntries(Object.entries(order).map(([p,list])=>[shiftKey(p),list.map(shiftKey)]))
- const parents={},accents={},states={},palette={}
+ const removed=new Set(),indices=new Map()
  db.cats.forEach((_,i)=>{
-  if(i===index)return
-  const j=shift(i),p=db.categoryParents[i]??''
-  parents[j]=shiftKey(p===key?parent:p)
+  if(tagAncestors('t:'+i).includes(key))removed.add(i)
+  else indices.set(i,indices.size)
+ })
+ const count=db.items.filter(t=>removed.has(t.cat)).length
+ if(!confirm('删除「'+db.cats[index]+'」及其中的 '+(removed.size-1)+' 个子标签、'+count+' 项任务？'))return
+ const previousTag=currentTag
+ const remapKey=k=>k?'t:'+indices.get(Number(k.slice(2))):''
+ const order={},parents={},accents={},states={},palette={}
+ for(const [p,children] of Object.entries(db.treeOrder)){
+  if(p && removed.has(Number(p.slice(2))))continue
+  order[remapKey(p)]=children.filter(k=>indices.has(Number(k.slice(2)))).map(remapKey)
+ }
+ for(const [i,j] of indices){
+  parents[j]=remapKey(db.categoryParents[i]??'')
   if(db.categoryAccents?.[i])accents[j]=db.categoryAccents[i]
   if(db.categoryStates[i])states[j]=db.categoryStates[i]
   palette[j]=db.categoryPalette?.[i]??i
- })
- for(const task of db.items){
-  if(task.cat===index)task.cat=parent?shift(Number(parent.slice(2))):null
-  else if(task.cat!=null)task.cat=shift(task.cat)
  }
- db.cats.splice(index,1)
- Object.assign(db,{categoryParents:parents,categoryAccents:accents,categoryStates:states,categoryPalette:palette})
- db.expandedTags=[...expandedTags].filter(i=>i!==index).map(shift)
- expandedTags.clear()
- for(const i of db.expandedTags)expandedTags.add(i)
- currentTag=shiftKey(currentTag===key?parent:currentTag)
- localStorage.setItem('dayfolio.openTag',currentTag)
- save()
+ const items=db.items.filter(t=>!removed.has(t.cat)).map(t=>({...t,cat:t.cat==null?null:indices.get(t.cat)}))
+ const nextTag=currentTag && removed.has(Number(currentTag.slice(2)))?parent:currentTag
+ usePlanner({...db,cats:db.cats.filter((_,i)=>indices.has(i)),items,treeOrder:order,
+  categoryParents:parents,categoryAccents:accents,categoryStates:states,categoryPalette:palette,
+  expandedTags:[...expandedTags].filter(i=>indices.has(i)).map(i=>indices.get(i))},remapKey(nextTag))
+ save({previousTag})
 }
 const tagMenu=$('tagMenu')
 function showTagMenu(target,x,y){

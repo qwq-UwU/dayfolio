@@ -108,4 +108,50 @@ function styleCategory(node,category){
  }
 }
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
-function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
+let savedPlanner=JSON.stringify(db)
+const undoSteps=[],redoSteps=[]
+function save({record=true,previousTag=currentTag}={}){
+ const next=JSON.stringify(db)
+ if(next!==savedPlanner){
+  localStorage.setItem('dayfolio.v1',next)
+  if(record){
+   undoSteps.push({data:savedPlanner,tag:previousTag})
+   if(undoSteps.length>50)undoSteps.shift()
+   redoSteps.length=0
+  }
+  savedPlanner=next
+ }
+ render()
+}
+function usePlanner(data,tag){
+ db=data
+ db.categoryParents??={}
+ db.categoryStates??={}
+ db.treeOrder??={}
+ editing=null
+ expandedTags.clear()
+ for(const index of db.expandedTags??[])expandedTags.add(index)
+ currentTag=tag
+ localStorage.setItem('dayfolio.openTag',tag)
+}
+function stepHistory(from,to){
+ if(!from.length)return
+ const step=from[from.length-1]
+ localStorage.setItem('dayfolio.v1',step.data)
+ to.push({data:savedPlanner,tag:currentTag})
+ from.pop()
+ savedPlanner=step.data
+ usePlanner(JSON.parse(step.data),step.tag)
+ render()
+}
+document.addEventListener('keydown',e=>{
+ if(!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.isComposing || e.defaultPrevented)return
+ const key=e.key.toLowerCase()
+ if(key!=='z' && key!=='y')return
+ if(document.querySelector('dialog[open]') || e.target.isContentEditable ||
+    e.target.closest?.('input,textarea,select') || document.querySelector('.moving-item,.drag-source'))return
+ e.preventDefault()
+ if($('tagMenu').matches(':popover-open'))$('tagMenu').hidePopover()
+ if(key==='z')stepHistory(undoSteps,redoSteps)
+ else stepHistory(redoSteps,undoSteps)
+})
