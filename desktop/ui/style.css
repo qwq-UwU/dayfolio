@@ -121,8 +121,21 @@ section .tree-actions button { width:auto; padding:4px 6px; }
 #treeRoot { display:none; text-align:center; padding:7px; border:1px dashed #8ca998; border-radius:5px; font-size:12px; }
 .moving-item #treeRoot { display:block; }
 #categorySection [data-drop=inside] { background:#e0eddf; outline:2px solid #58826b; outline-offset:-2px; }
-#categorySection [data-drop=before] { box-shadow:inset 0 3px #366b50; }
-#categorySection [data-drop=after] { box-shadow:inset 0 -3px #366b50; }
+.category-drag-source { opacity:.36; }
+.category-drop-slot {
+ display:flex; align-items:center; gap:9px; min-width:0; padding:0 12px;
+ border:1px solid color-mix(in srgb, var(--slot-color) 50%, #849389); border-radius:7px;
+ background:color-mix(in srgb, var(--slot-color) 42%, #f6f8f5); color:#425448;
+ font-size:14px; overflow:hidden; white-space:nowrap;
+}
+.category-drop-slot::before {
+ content:""; flex:none; width:10px; height:10px; border-radius:50%;
+ background:var(--slot-color); border:1px solid #60746560;
+}
+@media (prefers-reduced-motion:no-preference) {
+ .category-drop-slot { animation:category-slot-in 120ms ease-out; }
+ @keyframes category-slot-in { from { opacity:.45; } to { opacity:1; } }
+}
 .folder-row[draggable], .folder-name, #taskTags .task-tag { cursor:grab; }
 body.wide-tree aside { width:var(--panel-size,50%); }
 body.wide-tree #taskTags { max-height:68vh; }

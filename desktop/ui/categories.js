@@ -122,12 +122,22 @@ $('folderForm').onsubmit=e=>{
 function renderCategoryTags(){
  const host=$('taskTags')
  const scroll=host.scrollTop
- let source=null,highlight=null
- function clearMark(){if(highlight)delete highlight.dataset.drop;highlight=null}
+ const section=$('categorySection')
+ const targets=new Map()
+ const slot=el('div','category-drop-slot')
+ slot.setAttribute('aria-hidden','true')
+ let source=null,sourceRow=null,preview=null
+ function clearMark(){
+  if(preview)delete preview.node.dataset.drop
+  slot.remove()
+  preview=null
+ }
  function stop(){
+  sourceRow?.classList.remove('category-drag-source')
+  sourceRow=null
   source=null
   clearMark()
-  $('categorySection').classList.remove('moving-item')
+  section.classList.remove('moving-item')
  }
  function allow(parent){
   if(!source)return false
@@ -139,24 +149,42 @@ function renderCategoryTags(){
   return !db.folders.some(f=>f!==source.folder && f.parent===parent && f.name===source.folder.name)
  }
  function wireDrop(node,resolve){
-  function target(e){
-   if(!source)return null
-   const dest=resolve(e)
-   return dest.key!==source.key && allow(dest.parent)?dest:null
+  node.dataset.dropTarget=''
+  targets.set(node,resolve)
+ }
+ function destination(e){
+  if(!source)return null
+  const node=e.target.closest('[data-drop-target]')
+  if(!node && slot.isConnected){
+   // Keep the same destination over the slot and its surrounding grid gap.
+   const rect=slot.getBoundingClientRect()
+   if(e.clientX>=rect.left && e.clientX<=rect.right &&
+      e.clientY>=rect.top-6 && e.clientY<=rect.bottom+6)return preview
   }
-  node.ondragover=e=>{
-   clearMark()
-   const dest=target(e)
-   if(!dest)return
-   e.preventDefault()
-   e.dataTransfer.dropEffect='move'
-   highlight=node
-   node.dataset.drop=dest.where
+  const dest=targets.get(node)?.(e)
+  if(!dest || dest.key===source.key || !allow(dest.parent))return null
+  return {node,...dest}
+ }
+ section.ondragover=e=>{
+  if(!source)return
+  const dest=destination(e)
+  if(!dest){clearMark();return}
+  e.preventDefault()
+  e.dataTransfer.dropEffect='move'
+  if(dest.node===preview?.node && dest.where===preview.where)return
+  clearMark()
+  preview=dest
+  if(dest.where==='inside')dest.node.dataset.drop='inside'
+  else{
+   const group=dest.node.parentElement
+   if(dest.where==='before')group.before(slot)
+   else group.after(slot)
   }
-  node.ondragleave=e=>{if(highlight===node && !node.contains(e.relatedTarget))clearMark()}
-  node.ondrop=e=>{
-   const dest=target(e)
-   if(!dest)return
+ }
+ section.ondragleave=e=>{if(e.relatedTarget && !section.contains(e.relatedTarget))clearMark()}
+ section.ondrop=e=>{
+   const dest=destination(e)
+   if(!dest){stop();return}
    e.preventDefault()
    const order=orderedChildren(dest.parent).filter(key=>key!==source.key)
    const index=dest.where==='inside'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
@@ -170,15 +198,21 @@ function renderCategoryTags(){
    if(dest.where==='inside' && dest.parent)db.folders.find(f=>f.id===dest.parent).closed=false
    stop()
    save()
-  }
  }
  function wireItem(node,item){
   node.draggable=true
   node.ondragstart=e=>{
    source=item
+   sourceRow=node
+   const style=getComputedStyle(node)
+   slot.style.setProperty('--slot-color',style.getPropertyValue('--bg').trim() || '#dae4db')
+   slot.style.height=node.getBoundingClientRect().height+'px'
+   slot.textContent=item.folder?item.folder.name:db.cats[item.category]
    e.dataTransfer.effectAllowed='move'
    e.dataTransfer.setData('text/plain',node.textContent)
-   $('categorySection').classList.add('moving-item')
+   // Let the system capture the full row before dimming its original position.
+   requestAnimationFrame(()=>{if(sourceRow===node)node.classList.add('category-drag-source')})
+   section.classList.add('moving-item')
   }
   node.ondragend=stop
   wireDrop(node,e=>{
