@@ -135,7 +135,7 @@ $('restoreTask').onclick=()=>{
  save()
 }
 function deleteTask(task){
- if(!task || !confirm('删除任务「'+task.name+'」？'))return
+ if(!task || (!task.done && !confirm('删除任务「'+task.name+'」？')))return
  db.items=db.items.filter(t=>t.id!==task.id)
  if($('editor').open && editing===task)$('editor').close()
  save()
