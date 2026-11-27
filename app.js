@@ -27,6 +27,8 @@ if(!Array.isArray(db.hiddenCategories)){
  for(const task of db.items)delete task.hidden
 }
 function categoryColors(category){
+ const accent=db.categoryAccents?.[category]
+ if(accent)return ['color-mix(in srgb, '+accent+' 17%, white)',accent]
  if(colors[category])return colors[category]
  const hue=(345+(category-colors.length)*137.508)%360
  return ['hsl('+hue+' 48% 93%)','hsl('+hue+' 39% 52%)']
@@ -54,6 +56,10 @@ function renderCategoryTags(){
   const mark=el('span','tag-mark',visible?'✓':'')
   mark.setAttribute('aria-hidden','true')
   tag.append(mark,el('span','tag-name',name))
+  tag.oncontextmenu=e=>{
+   e.preventDefault()
+   openCategory(i)
+  }
   tag.onclick=()=>{
    if(visible)db.hiddenCategories.push(i)
    else db.hiddenCategories=db.hiddenCategories.filter(category=>category!==i)
@@ -169,15 +175,45 @@ $('addList').onclick=()=>{
  const name=prompt('新建列表名称')?.trim()
  if(name&&!db.lists.includes(name)){db.lists.push(name);save()}
 }
-$('addCat').onclick=()=>{
- const name=prompt('新建分类名称')?.trim()
- if(!name)return
- if(!db.cats.includes(name)){
-  db.cats.push(name)
-  $('catField').add(new Option(name,db.cats.length-1))
-  save()
+let categoryIndex=null
+let initialAccent=''
+function openCategory(index=null){
+ categoryIndex=index
+ $('categoryTitle').textContent=index===null?'新建分类':'编辑分类'
+ $('categoryName').value=db.cats[index]??''
+ $('categoryName').setCustomValidity('')
+ // The native color input expects hex, including for older HSL-based defaults.
+ const context=document.createElement('canvas').getContext('2d')
+ context.fillStyle=categoryColors(index??db.cats.length)[1]
+ initialAccent=context.fillStyle
+ $('categoryColor').value=initialAccent
+ $('categoryEditor').showModal()
+ $('categoryName').select()
+}
+$('addCat').onclick=$('newCategory').onclick=()=>openCategory()
+$('categoryCancel').onclick=()=>$('categoryEditor').close()
+$('categoryName').oninput=()=>$('categoryName').setCustomValidity('')
+$('categoryForm').onsubmit=e=>{
+ e.preventDefault()
+ const name=$('categoryName').value.trim()
+ if(!name || db.cats.some((other,i)=>other===name && i!==categoryIndex)){
+  $('categoryName').setCustomValidity(name?'已有同名分类':'请输入分类名称')
+  $('categoryName').reportValidity()
+  return
  }
- $('catField').value=db.cats.indexOf(name)
+ const index=categoryIndex??db.cats.length
+ db.cats[index]=name
+ if($('categoryColor').value!==initialAccent){
+  db.categoryAccents??={}
+  db.categoryAccents[index]=$('categoryColor').value
+ }
+ if($('editor').open){
+  $('catField').replaceChildren(...db.cats.map((label,i)=>new Option(label,i)))
+  $('catField').value=index
+ }
+ $('categoryEditor').close()
+ save()
+ if(!$('editor').open)$('taskTags').children[index]?.focus()
 }
 render()
 
