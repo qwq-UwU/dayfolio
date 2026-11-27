@@ -61,6 +61,20 @@ function styleCategory(node,category){
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
 const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
+let listLayout=localStorage.getItem('dayfolio.folderLayout')==='list'
+let currentFolder=localStorage.getItem('dayfolio.openFolder')||''
+if(!db.folders.some(f=>f.id===currentFolder))currentFolder=''
+function enterFolder(id){
+ currentFolder=id
+ localStorage.setItem('dayfolio.openFolder',id)
+ $('taskTags').scrollTop=0
+ renderCategoryTags()
+}
+for(const button of $('folderLayout').children)button.onclick=()=>{
+ listLayout=button.value==='list'
+ localStorage.setItem('dayfolio.folderLayout',button.value)
+ renderCategoryTags()
+}
 function orderedChildren(parent){
  const keys=db.folders.filter(f=>f.parent===parent).map(f=>'f:'+f.id)
  db.cats.forEach((_,i)=>{if((db.categoryParents[i]??'')===parent)keys.push('t:'+i)})
@@ -104,7 +118,7 @@ function openFolder(folder=null){
  $('folderTitle').textContent=folder?'编辑文件夹':'新建文件夹'
  $('folderName').value=folder?.name??''
  $('folderName').setCustomValidity('')
- folderOptions($('folderParent'),folder?.parent,folder?.id)
+ folderOptions($('folderParent'),folder?.parent??(listLayout?currentFolder:''),folder?.id)
  $('folderEditor').showModal()
  $('folderName').select()
 }
@@ -194,6 +208,30 @@ function renderCategoryTags(){
   })
  }
  wireDrop($('treeRoot'),()=>({parent:'',where:'inside'}))
+ for(const button of $('folderLayout').children)button.setAttribute('aria-pressed',String((button.value==='list')===listLayout))
+ host.classList.toggle('folder-list',listLayout)
+ const path=$('folderPath')
+ path.hidden=!listLayout
+ path.replaceChildren()
+ let inheritedState=null
+ if(listLayout){
+  const chain=[]
+  let id=currentFolder
+  while(id){
+   const folder=db.folders.find(f=>f.id===id)
+   chain.unshift(folder)
+   id=folder.parent
+  }
+  for(const folder of [{id:'',name:'全部分类'},...chain]){
+   const link=el('button','',folder.name)
+   link.onclick=()=>enterFolder(folder.id)
+   if(folder.id===currentFolder)link.setAttribute('aria-current','location')
+   wireDrop(link,()=>({parent:folder.id,where:'inside'}))
+   if(path.childElementCount)path.append(el('span','','›'))
+   path.append(link)
+  }
+  inheritedState=chain.find(f=>f.state!=='inherit')?.state
+ }
  function categoryTag(name,i){
   const tag=el('button','task-tag')
   const own=db.categoryStates[i]??'shown',state=effectiveState(i)
@@ -225,10 +263,15 @@ function renderCategoryTags(){
    expand.setAttribute('aria-label',(folder.closed?'展开':'折叠')+folder.name)
    expand.onclick=()=>{folder.closed=!folder.closed;save()}
    const name=el('button','folder-name',folder.name)
-   name.title='编辑文件夹'
-   name.onclick=()=>openFolder(folder)
+   name.title=listLayout?'打开文件夹':'编辑文件夹'
+   name.onclick=()=>listLayout?enterFolder(folder.id):openFolder(folder)
+   name.oncontextmenu=e=>{e.preventDefault();openFolder(folder)}
    wireItem(row,{key:'f:'+folder.id,parent,folder})
-   row.append(expand,name)
+   if(listLayout){
+    const icon=el('span','folder-glyph')
+    icon.setAttribute('aria-hidden','true')
+    row.append(icon,name)
+   }else row.append(expand,name)
    const control=el('select','folder-state')
    control.setAttribute('aria-label',folder.name+'的统一设置')
    for(const [value,label] of Object.entries(stateLabels))control.add(new Option(label,value))
@@ -236,7 +279,7 @@ function renderCategoryTags(){
    control.onchange=()=>{folder.state=control.value;save()}
    group.append(row,control)
    if(inherited)group.append(el('small','inherited-state','上层'+stateLabels[inherited]))
-   if(!folder.closed){
+   if(!listLayout && !folder.closed){
     const children=el('div','folder-children')
     children.append(...branch(folder.id,inherited || (folder.state==='inherit'?null:folder.state)))
     group.append(children)
@@ -254,7 +297,8 @@ function renderCategoryTags(){
   })
   return orderedChildren(parent).map(key=>nodes.get(key))
  }
- host.replaceChildren(...branch('',null))
+ host.replaceChildren(...branch(listLayout?currentFolder:'',inheritedState))
+ if(listLayout && !host.childElementCount)host.append(el('p','empty-folder','此文件夹为空'))
  host.scrollTop=scroll
 }
 function render(){
@@ -374,7 +418,7 @@ for(const [i,color] of presetColors.entries()){
 }
 function openCategory(index=null){
  categoryIndex=index
- folderOptions($('categoryParent'),db.categoryParents[index])
+ folderOptions($('categoryParent'),index===null && listLayout?currentFolder:db.categoryParents[index])
  $('categoryTitle').textContent=index===null?'新建分类':'编辑分类'
  $('categoryName').value=db.cats[index]??''
  $('categoryName').setCustomValidity('')

@@ -131,3 +131,16 @@ body.wide-tree #taskTags { max-height:68vh; }
  body.wide-tree #categorySection { display:block; }
  body.wide-tree #taskTags { height:50dvh; max-height:50dvh; }
 }
+#folderLayout { display:flex; margin:5px 2px; padding:2px; border:1px solid #dce3dc; border-radius:6px; }
+#folderLayout button { flex:1; padding:4px; text-align:center; font-size:12px; }
+#folderLayout [aria-pressed=true] { background:#e0eadf; }
+#folderPath { display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:3px 0; color:#607569; }
+#folderPath button { width:auto; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:4px; font-size:12px; }
+#folderPath [aria-current] { font-weight:650; color:#283f32; }
+.folder-list .folder-group { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:3px; border-bottom:1px solid #dce3dc; }
+.folder-list .folder-row { min-width:0; gap:6px; min-height:34px; }
+.folder-list .folder-state { margin:0; width:68px; }
+.folder-list .inherited-state { grid-column:1/-1; }
+.folder-glyph { width:16px; height:11px; position:relative; flex:none; margin:3px 0 0 3px; border:1px solid #7a8d80; border-radius:2px; }
+.folder-glyph::before { content:""; position:absolute; width:7px; height:3px; left:-1px; top:-4px; border:1px solid #7a8d80; border-bottom:0; border-radius:2px 2px 0 0; }
+.empty-folder { font-size:12px; color:#68766e; padding:7px; margin:0; }
