@@ -63,8 +63,11 @@ function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
 const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
 let listLayout=localStorage.getItem('dayfolio.folderLayout')==='list'
 let currentFolder=localStorage.getItem('dayfolio.openFolder')||''
+let currentTag=null
+const expandedTags=new Set()
 if(!db.folders.some(f=>f.id===currentFolder))currentFolder=''
 function enterFolder(id){
+ currentTag=null
  currentFolder=id
  localStorage.setItem('dayfolio.openFolder',id)
  $('taskTags').scrollTop=0
@@ -86,6 +89,46 @@ function setTreeWidth(wide){
  $('treeWidth').textContent=wide?'收起':'放大'
  $('treeWidth').setAttribute('aria-pressed',String(wide))
  localStorage.setItem('dayfolio.wideTree',String(wide))
+}
+const split=$('panelDivider')
+const narrow=matchMedia('(max-width:760px)')
+function setSplit(percent){
+ const value=Math.max(25,Math.min(75,Math.round(percent)))
+ document.body.style.setProperty('--panel-size',value+'%')
+ document.body.style.setProperty('--panel-height',value+'dvh')
+ split.setAttribute('aria-valuenow',value)
+}
+function setupSplit(){
+ split.setAttribute('aria-orientation',narrow.matches?'horizontal':'vertical')
+ setSplit(Number(localStorage.getItem('dayfolio.splitPercent')??50))
+}
+setupSplit()
+narrow.addEventListener('change',setupSplit)
+const rememberSplit=()=>localStorage.setItem('dayfolio.splitPercent',split.getAttribute('aria-valuenow'))
+split.onpointerdown=e=>{
+ if(!e.isPrimary || e.button!==0)return
+ e.preventDefault()
+ split.setPointerCapture(e.pointerId)
+ const start=narrow.matches?e.clientY:e.clientX
+ const value=Number(split.getAttribute('aria-valuenow'))
+ const extent=narrow.matches?innerHeight:document.documentElement.clientWidth
+ split.onpointermove=p=>{
+  if(p.pointerId===e.pointerId)setSplit(value+100*((narrow.matches?p.clientY:p.clientX)-start)/extent)
+ }
+ const finish=p=>{
+  if(p.pointerId!==e.pointerId)return
+  split.onpointermove=split.onpointerup=split.onpointercancel=split.onlostpointercapture=null
+  if(p.type==='pointerup')rememberSplit()
+  else setSplit(value)
+ }
+ split.onpointerup=split.onpointercancel=split.onlostpointercapture=finish
+}
+split.onkeydown=e=>{
+ const keys=narrow.matches?['ArrowUp','ArrowDown']:['ArrowLeft','ArrowRight']
+ if(!keys.includes(e.key))return
+ e.preventDefault()
+ setSplit(Number(split.getAttribute('aria-valuenow'))+(e.key===keys[0]?-2:2))
+ rememberSplit()
 }
 $('treeWidth').onclick=()=>setTreeWidth(!document.body.classList.contains('wide-tree'))
 setTreeWidth(localStorage.getItem('dayfolio.wideTree')==='true')
@@ -215,6 +258,7 @@ function renderCategoryTags(){
  path.replaceChildren()
  let inheritedState=null
  if(listLayout){
+  if(currentTag!==null)currentFolder=db.categoryParents[currentTag]??''
   const chain=[]
   let id=currentFolder
   while(id){
@@ -225,32 +269,53 @@ function renderCategoryTags(){
   for(const folder of [{id:'',name:'全部分类'},...chain]){
    const link=el('button','',folder.name)
    link.onclick=()=>enterFolder(folder.id)
-   if(folder.id===currentFolder)link.setAttribute('aria-current','location')
+   if(folder.id===currentFolder && currentTag===null)link.setAttribute('aria-current','location')
    wireDrop(link,()=>({parent:folder.id,where:'inside'}))
    if(path.childElementCount)path.append(el('span','','›'))
    path.append(link)
   }
   inheritedState=chain.find(f=>f.state!=='inherit')?.state
+  if(currentTag!==null)path.append(el('span','','›'),el('strong','',db.cats[currentTag]))
+ }
+ const marks={inherit:'↳',shown:'✓',muted:'−',hidden:''}
+ function taskRows(category){
+  const tasks=db.items.filter(t=>t.cat===category).sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))
+  if(!tasks.length)return [el('p','empty-folder','暂无任务')]
+  return tasks.map(task=>{
+   const button=el('button','folder-task'+(task.done?' finished':''))
+   button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
+   button.onclick=()=>edit(task)
+   return button
+  })
  }
  function categoryTag(name,i){
-  const tag=el('button','task-tag')
+  const tag=el('div','task-tag')
   const own=db.categoryStates[i]??'shown',state=effectiveState(i)
   tag.dataset.category=i
   styleCategory(tag,i)
-  tag.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
-  tag.setAttribute('aria-label',name+'，'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state])
-  const mark=el('span','tag-mark',{shown:'✓',muted:'−',hidden:''}[state])
-  mark.setAttribute('aria-hidden','true')
-  tag.append(mark,el('span','tag-name',name))
+  const mark=el('button','state-circle',marks[state])
+  mark.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
+  mark.setAttribute('aria-label',name+'，'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state])
+  const open=el('button','tag-open')
+  open.setAttribute('aria-expanded',String(!listLayout && expandedTags.has(i)))
+  open.append(el('span','tag-name',name),el('span','tag-chevron',!listLayout && expandedTags.has(i)?'▾':'▸'))
+  open.onclick=()=>{
+   if(listLayout)currentTag=i
+   else if(expandedTags.has(i))expandedTags.delete(i)
+   else expandedTags.add(i)
+   host.scrollTop=listLayout?0:host.scrollTop
+   renderCategoryTags()
+  }
+  tag.append(mark,open)
   tag.oncontextmenu=e=>{
    e.preventDefault()
    openCategory(i)
   }
-  tag.onclick=()=>{
+  mark.onclick=()=>{
    if(own==='hidden')delete db.categoryStates[i]
    else db.categoryStates[i]=own==='shown'?'muted':'hidden'
    save()
-   host.querySelector('[data-category="'+i+'"]')?.focus({preventScroll:true})
+   host.querySelector('[data-category="'+i+'"] .state-circle')?.focus({preventScroll:true})
   }
   return tag
  }
@@ -272,12 +337,15 @@ function renderCategoryTags(){
     icon.setAttribute('aria-hidden','true')
     row.append(icon,name)
    }else row.append(expand,name)
-   const control=el('select','folder-state')
-   control.setAttribute('aria-label',folder.name+'的统一设置')
-   for(const [value,label] of Object.entries(stateLabels))control.add(new Option(label,value))
-   control.value=folder.state
-   control.onchange=()=>{folder.state=control.value;save()}
-   group.append(row,control)
+   const control=el('button','state-circle',marks[folder.state])
+   control.title=stateLabels[folder.state]
+   control.setAttribute('aria-label',folder.name+'，'+control.title)
+   control.onclick=()=>{
+    folder.state={inherit:'shown',shown:'muted',muted:'hidden',hidden:'inherit'}[folder.state]
+    save()
+   }
+   row.prepend(control)
+   group.append(row)
    if(inherited)group.append(el('small','inherited-state','上层'+stateLabels[inherited]))
    if(!listLayout && !folder.closed){
     const children=el('div','folder-children')
@@ -293,11 +361,18 @@ function renderCategoryTags(){
    if(inherited){
     tag.title='上层'+stateLabels[inherited]+' · 标签自身'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[db.categoryStates[i]??'shown']
    }
-   nodes.set('t:'+i,tag)
+   const group=el('div','tag-group')
+   group.append(tag)
+   if(!listLayout && expandedTags.has(i)){
+    const children=el('div','folder-children')
+    children.append(...taskRows(i))
+    group.append(children)
+   }
+   nodes.set('t:'+i,group)
   })
   return orderedChildren(parent).map(key=>nodes.get(key))
  }
- host.replaceChildren(...branch(listLayout?currentFolder:'',inheritedState))
+ host.replaceChildren(...(listLayout && currentTag!==null?taskRows(currentTag):branch(listLayout?currentFolder:'',inheritedState)))
  if(listLayout && !host.childElementCount)host.append(el('p','empty-folder','此文件夹为空'))
  host.scrollTop=scroll
 }
@@ -369,7 +444,7 @@ function edit(t,date,minute=540){
  updateTimeFields()
  $('nameField').value=t?.name||'';$('dateField').value=t?.date||date||key(now)
  $('catField').replaceChildren(...db.cats.map((name,i)=>new Option(name,i)))
- $('catField').value=t?.cat??0
+ $('catField').value=t?.cat??(listLayout?currentTag:null)??0
  $('done').checked=t?.done||false;$('del').hidden=!t;$('editor').showModal()}
 $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value,done:$('done').checked};if($('allDay').checked){data.start=null;data.end=null}
  else{
@@ -469,7 +544,7 @@ $('categoryForm').onsubmit=e=>{
  }
  $('categoryEditor').close()
  save()
- if(!$('editor').open)$('taskTags').querySelector('[data-category="'+index+'"]')?.focus()
+ if(!$('editor').open)$('taskTags').querySelector('[data-category="'+index+'"] .tag-open')?.focus()
 }
 const visibilitySlider=$('mutedVisibility')
 const storedVisibility=Number(localStorage.getItem('dayfolio.mutedVisibility')??30)
