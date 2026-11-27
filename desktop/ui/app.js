@@ -32,6 +32,8 @@ function render(){
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
  $('title').textContent=$('where').textContent=title
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
+ $('calendar').setAttribute('aria-pressed',String(monthly))
+ $('tasks').setAttribute('aria-pressed',String(!monthly))
  $('month').textContent=monthly?cursor.getFullYear()+'年 '+(cursor.getMonth()+1)+'月':'全部任务'
  for(const id of ['prev','next','today'])$(id).hidden=!monthly
  const periods=document.getElementById("periods");periods.hidden=!monthly
@@ -150,7 +152,6 @@ function newTaskForTag(category=''){
 }
 $('del').onclick=()=>deleteTask(editing)
 $('cancel').onclick=()=>$('editor').close()
-$('newTask').onclick=()=>newTaskForTag('')
 for(const id of ['calendar','tasks'])$(id).onclick=()=>{mode=id;render()}
 for(const button of $('periods').children)button.onclick=()=>setPeriod(button.dataset.period)
 function setPeriod(value){
