@@ -223,8 +223,9 @@ function renderCategoryTags(){
    }
    return {
     move(e){
-     point=e
+     const dy=e.clientY-down.clientY
      if(!active){
+      if(Math.abs(dy)<5)return
       active=true
       group.before(gap)
       row.style.width=rect.width+'px'
@@ -233,11 +234,13 @@ function renderCategoryTags(){
       row.classList.add('lifted-row')
       section.classList.add('moving-item')
      }
-     row.style.transform='translate('+ (rect.left+e.clientX-down.clientX)+'px,'+(rect.top+e.clientY-down.clientY)+'px)'
+     point=e
+     row.style.transform='translate('+rect.left+'px,'+(rect.top+dy)+'px)'
      updateTarget()
      if(!frame)frame=requestAnimationFrame(scrollEdge)
     },
     finish(accepted){
+     if(!active)return
      cancelAnimationFrame(frame)
      for(const animation of animations.values())animation.cancel()
      if(dest)delete dest.node.dataset.drop
