@@ -30,6 +30,11 @@
  <input id="mutedVisibility" type="range" min="0" max="100" step="1">
  <div class="range-ends"><span>0 · 几乎不可见</span><span>100 · 原色</span></div>
  <div class="sample-area"><div id="mutedSample" class="event muted-category"><strong>任务预览</strong><br>09:00–10:00</div></div>
+ <div class="backup-actions"><button id="exportData">导出日程</button><button id="importData">导入日程</button><input id="backupFile" type="file" accept=".json,application/json" hidden></div>
  <div class="actions"><button id="closeSettings" class="primary">完成</button></div>
-</dialog><script src="app.js"></script></body></html>
+</dialog><script src="state.js"></script>
+<script src="categories.js"></script>
+<script src="timeline.js"></script>
+<script src="app.js"></script>
+<script src="backup.js"></script></body></html>
 

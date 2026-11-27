@@ -160,3 +160,5 @@ body.wide-tree #taskTags { max-height:68vh; }
 #taskTags .folder-task { display:grid; gap:2px; padding:6px 8px; width:100%; min-width:0; text-align:left; }
 .folder-task span,.folder-task small { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .folder-task small { font-size:10px; letter-spacing:0; }
+.backup-actions { display:flex; gap:8px; margin:16px 0; }
+.backup-actions button { padding:6px 10px; border:1px solid #dce3dc; }
