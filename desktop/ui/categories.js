@@ -14,10 +14,30 @@ for(const button of $('folderLayout').children)button.onclick=()=>{
  localStorage.setItem('dayfolio.folderLayout',button.value)
  renderCategoryTags()
 }
-function orderedChildren(parent){
- const keys=db.cats.map((_,i)=>'t:'+i).filter(key=>(db.categoryParents[key.slice(2)]??'')===parent)
- const saved=db.treeOrder[parent]??[]
- return [...saved.filter(key=>keys.includes(key)),...keys.filter(key=>!saved.includes(key))]
+function childTagKeys(parent){
+ return db.cats.map((_,i)=>'t:'+i).filter(key=>(db.categoryParents[key.slice(2)]??'')===parent)
+}
+function orderedEntries(parent){
+ const entries=new Map()
+ for(const key of childTagKeys(parent))entries.set(key,{key,category:Number(key.slice(2))})
+ const category=parent?Number(parent.slice(2)):null
+ const completed=[]
+ for(const task of db.items.filter(t=>t.cat===category).sort(taskListOrder)){
+  const entry={key:'task:'+task.id,task}
+  if(task.done)completed.push(entry)
+  else entries.set(entry.key,entry)
+ }
+ const ordered=[]
+ for(const key of db.treeOrder[parent]??[]){
+  if(entries.has(key)){ordered.push(entries.get(key));entries.delete(key)}
+ }
+ return [...ordered,...entries.values(),...completed]
+}
+function removeFromOrder(parent,key){
+ if(db.treeOrder[parent])db.treeOrder[parent]=db.treeOrder[parent].filter(child=>child!==key)
+}
+function removeTaskFromOrder(task){
+ removeFromOrder(task.cat==null?'':'t:'+task.cat,'task:'+task.id)
 }
 function tagAncestors(key){
  const chain=[]
@@ -31,7 +51,9 @@ function tagOptions(select,parent='',exclude=null,forTask=false){
  select.replaceChildren()
  select.add(new Option(forTask?'未分类':'顶层',''))
  function visit(key,path){
-  for(const child of orderedChildren(key)){
+  const keys=new Set(childTagKeys(key))
+  const saved=(db.treeOrder[key]??[]).filter(child=>keys.delete(child))
+  for(const child of [...saved,...keys]){
    const index=Number(child.slice(2))
    if(index===exclude)continue
    const name=path+db.cats[index]
@@ -108,14 +130,13 @@ function renderCategoryTags(){
   targets.set(node,resolve)
  }
  function commit(item,dest){
-  const order=orderedChildren(dest.parent).filter(key=>key!==item.key)
-  const index=dest.where==='inside'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
+  const order=orderedEntries(dest.parent).filter(entry=>!entry.task?.done && entry.key!==item.key).map(entry=>entry.key)
+  const index=dest.where==='inside' || dest.where==='end'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
   order.splice(index,0,item.key)
-  if(item.parent!==dest.parent && db.treeOrder[item.parent]){
-   db.treeOrder[item.parent]=db.treeOrder[item.parent].filter(key=>key!==item.key)
-  }
+  if(item.parent!==dest.parent)removeFromOrder(item.parent,item.key)
   db.treeOrder[dest.parent]=order
-  db.categoryParents[item.category]=dest.parent
+  if(item.task)item.task.cat=dest.parent?Number(dest.parent.slice(2)):null
+  else db.categoryParents[item.category]=dest.parent
   if(dest.where==='inside' && dest.parent){
    expandedTags.add(Number(dest.parent.slice(2)))
    db.expandedTags=[...expandedTags]
@@ -124,9 +145,11 @@ function renderCategoryTags(){
  }
  function wireItem(row,item){
   wireDrop(row,fraction=>{
-   if(fraction>=0.28 && fraction<=0.72)return {key:item.key,parent:item.key,where:'inside'}
+   if(!item.task && fraction>=0.28 && fraction<=0.72)return {key:item.key,parent:item.key,where:'inside'}
    return {key:item.key,parent:item.parent,where:fraction<0.5?'before':'after'}
   })
+  if(item.task && row.classList.contains('muted-category'))return
+  row.dataset.sortable=''
   bindPointerDrag(row,down=>{
    const group=row.parentElement, rect=row.getBoundingClientRect()
    const gap=el('div','category-gap')
@@ -142,7 +165,7 @@ function renderCategoryTags(){
     if(where==='before'?gap.nextElementSibling===anchor:gap.previousElementSibling===anchor)return
     const positions=new Map()
     if(!reduced){
-     for(const node of host.querySelectorAll('.task-tag')){
+     for(const node of host.querySelectorAll('[data-drop-target]')){
       if(node!==row && node.offsetHeight)positions.set(node,node.getBoundingClientRect().top)
      }
     }
@@ -161,7 +184,7 @@ function renderCategoryTags(){
     const hit=document.elementFromPoint(x,y)
     if(!hit || !section.contains(hit))return null
     if(hit===gap)return gapTarget
-    const container=hit.closest('.tag-group')
+    const container=hit.closest('.tag-group,.task-group')
     const node=container?.firstElementChild || hit.closest('[data-drop-target]')
     const resolve=targets.get(node)
     if(resolve){
@@ -184,7 +207,7 @@ function renderCategoryTags(){
     if(dest.where==='inside')dest.node.dataset.drop='inside'
     else{
      gapTarget=dest
-     place(dest.node.parentElement,dest.where)
+     place((dest.anchor??dest.node).parentElement,dest.where==='end'?'before':dest.where)
     }
    }
    function scrollEdge(){
@@ -246,22 +269,19 @@ function renderCategoryTags(){
   }
  }
  const marks={inherit:'↳',shown:'✓',muted:'−',hidden:''}
- function taskRows(category){
-  const tasks=db.items.filter(t=>t.cat===category).sort(taskListOrder)
-  return tasks.map(task=>{
-   const button=el('button','folder-task'+(task.done?' finished':''))
-   button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
-   button.onclick=()=>edit(task)
-   const row=el('div',effectiveState(task.cat)==='muted'?'folder-task-row muted-category':'folder-task-row')
-   row.dataset.taskId=task.id
-   row.append(button,completionControl(task))
-   return row
-  })
+ function taskRow(task){
+  const button=el('button','folder-task'+(task.done?' finished':''))
+  button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
+  button.onclick=()=>edit(task)
+  const row=el('div',effectiveState(task.cat)==='muted'?'folder-task-row muted-category':'folder-task-row')
+  row.dataset.taskId=task.id
+  row.append(button,completionControl(task))
+  return row
  }
  function categoryTag(name,i){
   const tag=el('div','task-tag')
   const own=db.categoryStates[i]??'inherit',state=effectiveState(i)
-  const hasChildren=orderedChildren('t:'+i).length>0
+  const hasChildren=childTagKeys('t:'+i).length>0
   tag.dataset.category=i
   styleCategory(tag,i)
   const mark=el('button','state-circle',hasChildren && own==='inherit'?'↳':marks[state])
@@ -289,8 +309,19 @@ function renderCategoryTags(){
   return tag
  }
  function contents(parent){
-  const nodes=orderedChildren(parent).map(key=>{
-   const i=Number(key.slice(2)),group=el('div','tag-group')
+  let firstCompleted=null
+  const nodes=orderedEntries(parent).map(item=>{
+   const {key,task,category:i}=item
+   if(task){
+    const group=el('div','task-group'),row=taskRow(task)
+    group.append(row)
+    if(task.done){
+     firstCompleted??=row
+     wireDrop(row,()=>({parent,where:'end',anchor:firstCompleted}))
+    }else wireItem(row,{...item,parent})
+    return group
+   }
+   const group=el('div','tag-group')
    const tag=categoryTag(db.cats[i],i)
    wireItem(tag,{key,parent,category:i})
    group.append(tag)
@@ -301,7 +332,6 @@ function renderCategoryTags(){
    }
    return group
   })
-  nodes.push(...taskRows(parent?Number(parent.slice(2)):null))
   if(!nodes.length)nodes.push(el('p','empty-folder','暂无子标签或任务'))
   return nodes
  }
@@ -373,7 +403,8 @@ function deleteTag(index){
  const order={},parents={},accents={},states={},palette={}
  for(const [p,children] of Object.entries(db.treeOrder)){
   if(p && removed.has(Number(p.slice(2))))continue
-  order[remapKey(p)]=children.filter(k=>indices.has(Number(k.slice(2)))).map(remapKey)
+  order[remapKey(p)]=children.filter(k=>k.startsWith('task:') || indices.has(Number(k.slice(2))))
+   .map(k=>k.startsWith('task:')?k:remapKey(k))
  }
  for(const [i,j] of indices){
   parents[j]=remapKey(db.categoryParents[i]??'')
@@ -457,7 +488,7 @@ $('categoryForm').onsubmit=e=>{
   $('categoryName').reportValidity()
   return
  }
- if(oldParent!==parent && db.treeOrder[oldParent])db.treeOrder[oldParent]=db.treeOrder[oldParent].filter(k=>k!=='t:'+index)
+ if(oldParent!==parent)removeFromOrder(oldParent,'t:'+index)
  db.categoryParents[index]=parent
  if(parent){expandedTags.add(Number(parent.slice(2)));db.expandedTags=[...expandedTags]}
  if(categoryIndex===null && db.categoryPalette)db.categoryPalette[index]=paletteIndex(index)

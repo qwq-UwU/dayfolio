@@ -27,6 +27,7 @@ function readPlannerBackup(text){
   }
  }
  const ids=new Set()
+ const entryParents=new Map(parents)
  for(const t of data.items){
   if(!t || typeof t.id!=='string' || ids.has(t.id) || typeof t.name!=='string' ||
      ((legacy || t.cat!==null) && (!Number.isInteger(t.cat) || t.cat<0 || t.cat>=data.cats.length)) ||
@@ -37,6 +38,7 @@ function readPlannerBackup(text){
       !Number.isInteger(t.end) || t.end<=t.start || t.end>t.start+1440)invalid()
   }
   ids.add(t.id)
+  if(!t.done)entryParents.set('task:'+t.id,t.cat==null?'':'t:'+t.cat)
  }
  for(const field of ['categoryParents','categoryAccents','categoryStates','categoryPalette','treeOrder']){
   const map=data[field]??{}
@@ -44,7 +46,7 @@ function readPlannerBackup(text){
   for(const [k,v] of Object.entries(map)){
    if(field==='treeOrder'){
     if((k!=='' && !parents.has(k)) || !Array.isArray(v) || !v.every(x=>typeof x==='string'))invalid()
-    if(!legacy && (new Set(v).size!==v.length || v.some(key=>parents.get(key)!==k)))invalid()
+    if(!legacy && (new Set(v).size!==v.length || v.some(key=>entryParents.get(key)!==k)))invalid()
    }else{
     if(!/^\d+$/.test(k) || Number(k)>=data.cats.length)invalid()
     if(field==='categoryParents' && v!=='' && !parents.has(v))invalid()

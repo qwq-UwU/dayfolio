@@ -5,7 +5,10 @@ function taskListOrder(a,b){
 function setTaskDone(task,done){
  if(Boolean(task.done)===done)return
  task.done=done
- if(done)task.completedAt=Date.now()
+ if(done){
+  removeTaskFromOrder(task)
+  task.completedAt=Date.now()
+ }
  else delete task.completedAt
 }
 function completionControl(task,calendar=false){
@@ -120,6 +123,7 @@ $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim()
   if(data.end<=data.start)data.end+=1440
  }
  const task=editing || {id:crypto.randomUUID(),done:false}
+ if(editing && task.cat!==data.cat)removeTaskFromOrder(task)
  Object.assign(task,data)
  if(!editing)db.items.push(task)
  setTaskDone(task,$('done').checked)
@@ -136,6 +140,7 @@ $('restoreTask').onclick=()=>{
 }
 function deleteTask(task){
  if(!task || (!task.done && !confirm('删除任务「'+task.name+'」？')))return
+ removeTaskFromOrder(task)
  db.items=db.items.filter(t=>t.id!==task.id)
  if($('editor').open && editing===task)$('editor').close()
  save()
