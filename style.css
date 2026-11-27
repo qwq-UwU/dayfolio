@@ -104,3 +104,14 @@
 .sample-area { margin: 20px 0; padding: 10px; border: 1px solid #e1e6e0; border-radius: 7px; }
 #mutedSample { margin: 0; padding: 6px 9px; }
 @media(max-width:760px){aside footer:has(#openSettings){display:block;padding-top:6px}}
+.tree-actions { display:flex; gap:2px; }
+.tree-actions button { font-size:11px; padding:4px; }
+.folder-group { min-width:0; padding:4px 0; }
+.folder-row { display:flex; align-items:center; gap:2px; }
+.folder-row button.folder-expand { width:24px; padding:5px; text-align:center; }
+.folder-row button.folder-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:5px 0; font-weight:600; }
+.folder-state { width:auto; max-width:100%; margin:2px 0 5px; padding:2px 5px; font-size:11px; }
+.folder-children { display:grid; gap:5px; padding-left:7px; margin-left:4px; border-left:1px solid #d1dcd3; }
+.folder-children:empty { display:none; }
+.inherited-state { display:block; margin-bottom:4px; letter-spacing:0; }
+#taskTags { max-height:55vh; }

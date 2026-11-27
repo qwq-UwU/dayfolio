@@ -15,9 +15,15 @@ const snapStep = 15
 const key = d => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-')
 const colors = [['#e0eee4','#65a37c'],['#e7edf7','#819dc0'],['#f6e9dc','#c69a66'],['#ece6f5','#a28cbb']]
 const seed = [
- [2,'制定本月计划',0,0],[4,'阅读与笔记',2,3],[6,'项目进度同步',0,1],[9,'设计方案评审',0,1],[11,'整理书单',2,3],[14,'周末徒步',1,2],[17,'产品迭代讨论',0,0],[19,'课程学习',2,3],[22,'家庭聚餐',1,2],[24,'更新项目文档',0,0],[26,'团队周会',0,1],[27,'月度工作复盘',0,0],[28,'公园慢跑',1,2]]
-let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {lists:['工作计划','个人生活','学习成长'],cats:['专注工作','会议沟通','生活日常','学习阅读'],items:seed.map(([day,name,list,cat],i)=>({id:String(i),name,list,cat,date:key(new Date(now.getFullYear(),now.getMonth(),day)),start:540+(i%5)*75,end:600+(i%5)*75,done:false}))}
-let mode='calendar',filter=null,editing=null
+ [2,'制定本月计划',0],[4,'阅读与笔记',3],[6,'项目进度同步',1],[9,'设计方案评审',1],[11,'整理书单',3],[14,'周末徒步',2],[17,'产品迭代讨论',0],[19,'课程学习',3],[22,'家庭聚餐',2],[24,'更新项目文档',0],[26,'团队周会',1],[27,'月度工作复盘',0],[28,'公园慢跑',2]]
+let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {cats:['专注工作','会议沟通','生活日常','学习阅读'],items:seed.map(([day,name,cat],i)=>({id:String(i),name,cat,date:key(new Date(now.getFullYear(),now.getMonth(),day)),start:540+(i%5)*75,end:600+(i%5)*75,done:false}))}
+let mode='calendar',editing=null
+db.folders??=[]
+db.categoryParents??={}
+if(db.lists){
+ delete db.lists
+ for(const task of db.items)delete task.list
+}
 if(!db.categoryStates){
  db.categoryStates={}
  for(const [category] of db.cats.entries()){
@@ -37,7 +43,7 @@ function categoryColors(category){
 }
 function styleCategory(node,category){
  const [bg,ink]=categoryColors(category)
- node.classList.toggle('muted-category',db.categoryStates[category]==='muted')
+ node.classList.toggle('muted-category',effectiveState(category)==='muted')
  node.style.setProperty('--bg',bg)
  node.style.setProperty('--ink',ink)
  const custom=db.categoryAccents?.[category]
@@ -53,20 +59,63 @@ function styleCategory(node,category){
 }
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
-function renderLists(){
- $('lists').replaceChildren(...db.lists.map((name,i)=>{
-  const selected=filter?.i===i
-  const b=el('button',selected?'active':'','☰　 '+name)
-  b.onclick=()=>{filter=selected?null:{type:'list',i};render()}
-  return b
- }))
+const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
+function effectiveState(category){
+ let state=db.categoryStates[category]??'shown'
+ let id=db.categoryParents[category]
+ while(id){
+  const folder=db.folders.find(item=>item.id===id)
+  if(!folder)break
+  if(folder.state!=='inherit')state=folder.state
+  id=folder.parent
+ }
+ return state
+}
+function folderOptions(select,current='',exclude=''){
+ select.replaceChildren(new Option('顶层', ''))
+ function visit(parent,path){
+  for(const f of db.folders.filter(item=>item.parent===parent && item.id!==exclude)){
+   const label=path+f.name
+   select.add(new Option(label,f.id))
+   visit(f.id,label+' / ')
+  }
+ }
+ visit('','')
+ select.value=current
+}
+let editingFolder=null
+function openFolder(folder=null){
+ editingFolder=folder
+ $('folderTitle').textContent=folder?'编辑文件夹':'新建文件夹'
+ $('folderName').value=folder?.name??''
+ $('folderName').setCustomValidity('')
+ folderOptions($('folderParent'),folder?.parent,folder?.id)
+ $('folderEditor').showModal()
+ $('folderName').select()
+}
+$('newFolder').onclick=()=>openFolder()
+$('folderCancel').onclick=()=>$('folderEditor').close()
+$('folderName').oninput=$('folderParent').onchange=()=>$('folderName').setCustomValidity('')
+$('folderForm').onsubmit=e=>{
+ e.preventDefault()
+ const name=$('folderName').value.trim(),parent=$('folderParent').value
+ if(!name || db.folders.some(f=>f!==editingFolder && f.parent===parent && f.name===name)){
+  $('folderName').setCustomValidity(name?'同一层已有同名文件夹':'请输入文件夹名称')
+  $('folderName').reportValidity()
+  return
+ }
+ if(editingFolder)Object.assign(editingFolder,{name,parent})
+ else db.folders.push({id:crypto.randomUUID(),name,parent,state:'inherit'})
+ $('folderEditor').close()
+ save()
 }
 function renderCategoryTags(){
  const host=$('taskTags')
  const scroll=host.scrollTop
- host.replaceChildren(...db.cats.map((name,i)=>{
+ function categoryTag(name,i){
   const tag=el('button','task-tag')
-  const state=db.categoryStates[i]??'shown'
+  const own=db.categoryStates[i]??'shown',state=effectiveState(i)
+  tag.dataset.category=i
   styleCategory(tag,i)
   tag.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
   tag.setAttribute('aria-label',name+'，'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state])
@@ -78,17 +127,54 @@ function renderCategoryTags(){
    openCategory(i)
   }
   tag.onclick=()=>{
-   if(state==='hidden')delete db.categoryStates[i]
-   else db.categoryStates[i]=state==='shown'?'muted':'hidden'
+   if(own==='hidden')delete db.categoryStates[i]
+   else db.categoryStates[i]=own==='shown'?'muted':'hidden'
    save()
-   host.children[i]?.focus({preventScroll:true})
+   host.querySelector('[data-category="'+i+'"]')?.focus({preventScroll:true})
   }
   return tag
- }))
+ }
+ function branch(parent,inherited){
+  const nodes=[]
+  for(const folder of db.folders.filter(f=>f.parent===parent)){
+   const group=el('div','folder-group'),row=el('div','folder-row')
+   const expand=el('button','folder-expand',folder.closed?'▸':'▾')
+   expand.setAttribute('aria-expanded',String(!folder.closed))
+   expand.setAttribute('aria-label',(folder.closed?'展开':'折叠')+folder.name)
+   expand.onclick=()=>{folder.closed=!folder.closed;save()}
+   const name=el('button','folder-name',folder.name)
+   name.title='编辑文件夹'
+   name.onclick=()=>openFolder(folder)
+   row.append(expand,name)
+   const control=el('select','folder-state')
+   control.setAttribute('aria-label',folder.name+'的统一设置')
+   for(const [value,label] of Object.entries(stateLabels))control.add(new Option(label,value))
+   control.value=folder.state
+   control.onchange=()=>{folder.state=control.value;save()}
+   group.append(row,control)
+   if(inherited)group.append(el('small','inherited-state','上层'+stateLabels[inherited]))
+   if(!folder.closed){
+    const children=el('div','folder-children')
+    children.append(...branch(folder.id,inherited || (folder.state==='inherit'?null:folder.state)))
+    group.append(children)
+   }
+   nodes.push(group)
+  }
+  db.cats.forEach((name,i)=>{
+   if((db.categoryParents[i]??'')!==parent)return
+   const tag=categoryTag(name,i)
+   if(inherited){
+    tag.title='上层'+stateLabels[inherited]+' · 标签自身'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[db.categoryStates[i]??'shown']
+   }
+   nodes.push(tag)
+  })
+  return nodes
+ }
+ host.replaceChildren(...branch('',null))
  host.scrollTop=scroll
 }
 function render(){
- renderLists();renderCategoryTags()
+ renderCategoryTags()
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
  $('title').textContent=$('where').textContent=title
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
@@ -98,12 +184,12 @@ function render(){
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
  $('prev').setAttribute('aria-label','向前'+unit);$('next').setAttribute('aria-label','向后'+unit)
- const items=db.items.filter(t=>db.categoryStates[t.cat]!=='hidden' && (!filter||t.list===filter.i))
+ const items=db.items.filter(t=>effectiveState(t.cat)!=='hidden')
  const view=$('view')
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
- if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div',db.categoryStates[t.cat]==='muted'?'row muted-row':'row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
+ if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -154,9 +240,10 @@ function edit(t,date,minute=540){
  $('endTime').setCustomValidity('')
  updateTimeFields()
  $('nameField').value=t?.name||'';$('dateField').value=t?.date||date||key(now)
- for(const [field,group,type] of [['listField','lists','list'],['catField','cats','cat']]){const s=$(field);s.replaceChildren(...db[group].map((n,i)=>new Option(n,i)));s.value=t?.[type]??(filter?.type===type?filter.i:0)}
+ $('catField').replaceChildren(...db.cats.map((name,i)=>new Option(name,i)))
+ $('catField').value=t?.cat??0
  $('done').checked=t?.done||false;$('del').hidden=!t;$('editor').showModal()}
-$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,list:+$('listField').value,cat:+$('catField').value,done:$('done').checked};if($('allDay').checked){data.start=null;data.end=null}
+$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value,done:$('done').checked};if($('allDay').checked){data.start=null;data.end=null}
  else{
   data.start=minutes($('startTime').value)
   data.end=minutes($('endTime').value)
@@ -182,10 +269,6 @@ for(const [id,step] of [['prev',-1],['next',1]])$(id).onclick=()=>{
  render()
 }
 $('today').onclick=()=>{cursor=new Date();render()}
-$('addList').onclick=()=>{
- const name=prompt('新建列表名称')?.trim()
- if(name&&!db.lists.includes(name)){db.lists.push(name);save()}
-}
 let categoryIndex=null
 const presetColors=[...colors.map(pair=>pair[0]),'#f4d7dd','#f7e7ae','#c7e6e5','#d5dade']
 let initialColor='',draftColor=''
@@ -207,6 +290,7 @@ for(const [i,color] of presetColors.entries()){
 }
 function openCategory(index=null){
  categoryIndex=index
+ folderOptions($('categoryParent'),db.categoryParents[index])
  $('categoryTitle').textContent=index===null?'新建分类':'编辑分类'
  $('categoryName').value=db.cats[index]??''
  $('categoryName').setCustomValidity('')
@@ -245,6 +329,7 @@ $('categoryForm').onsubmit=e=>{
   return
  }
  const index=categoryIndex??db.cats.length
+ db.categoryParents[index]=$('categoryParent').value
  db.cats[index]=name
  if(draftColor!==initialColor){
   db.categoryAccents??={}
@@ -256,7 +341,7 @@ $('categoryForm').onsubmit=e=>{
  }
  $('categoryEditor').close()
  save()
- if(!$('editor').open)$('taskTags').children[index]?.focus()
+ if(!$('editor').open)$('taskTags').querySelector('[data-category="'+index+'"]')?.focus()
 }
 const visibilitySlider=$('mutedVisibility')
 const storedVisibility=Number(localStorage.getItem('dayfolio.mutedVisibility')??30)
@@ -272,7 +357,7 @@ visibilitySlider.oninput=()=>{
  localStorage.setItem('dayfolio.mutedVisibility',visibilitySlider.value)
 }
 $('openSettings').onclick=()=>{
- const category=db.cats.findIndex((_,i)=>db.categoryStates[i]==='muted')
+ const category=db.cats.findIndex((_,i)=>effectiveState(i)==='muted')
  const sample=$('mutedSample')
  styleCategory(sample,Math.max(0,category))
  sample.classList.add('muted-category')
@@ -695,7 +780,7 @@ function renderTimeline(view,items){
   col.onclick=e=>edit(null,date,clamp(minute(e),1439))
   for(const {task:part,lane,count:lanes} of overlaps(visible)){
    const b=eventButton(part.task,true,part.offset)
-   if(db.categoryStates[part.task.cat]!=='muted'){
+   if(effectiveState(part.task.cat)!=='muted'){
     bindTimelineTask(b,part,col,true)
     if(!part.offset)addResizeHandle(b,part,'start',col,previewBlocks,autoScroll)
     if(part.task.end<=part.offset+1440)addResizeHandle(b,part,'end',col,previewBlocks,autoScroll)
