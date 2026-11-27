@@ -1,4 +1,3 @@
-// The browser and desktop editions use the same portable planner data.
 function readPlannerBackup(text){
  const backup=JSON.parse(text)
  if(backup.format!=='dayfolio' || backup.version!==1)throw Error('请选择序日导出的日程文件。')
@@ -51,16 +50,7 @@ function readPlannerBackup(text){
 }
 $('exportData').onclick=()=>{
  const json=JSON.stringify({format:'dayfolio',version:1,data:db},null,2)
- if(location.origin==='https://dayfolio.local' && window.chrome?.webview){
-  window.chrome.webview.postMessage(json)
-  return
- }
- const url=URL.createObjectURL(new Blob([json],{type:'application/json'}))
- const link=document.createElement('a')
- link.href=url
- link.download='序日-'+key(new Date())+'.json'
- link.click()
- setTimeout(()=>URL.revokeObjectURL(url),30000)
+ window.chrome.webview.postMessage(json)
 }
 $('importData').onclick=()=>$('backupFile').click()
 $('backupFile').onchange=async e=>{

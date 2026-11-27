@@ -54,9 +54,6 @@ namespace Dayfolio
         {
             try
             {
-                string assets = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ui");
-                if (!File.Exists(Path.Combine(assets, "index.html")))
-                    throw new FileNotFoundException("缺少界面文件，请完整解压桌面版压缩包。");
                 string profile = Path.Combine(Environment.GetFolderPath(
                     Environment.SpecialFolder.LocalApplicationData), "Dayfolio", "WebView2");
                 var environment = await CoreWebView2Environment.CreateAsync(null, profile);
@@ -64,7 +61,9 @@ namespace Dayfolio
                 await view.EnsureCoreWebView2Async(environment);
                 if (IsDisposed) return;
                 var core = view.CoreWebView2;
-                core.SetVirtualHostNameToFolderMapping(AppHost, assets, CoreWebView2HostResourceAccessKind.Deny);
+                core.Settings.AreDefaultContextMenusEnabled = false;
+                core.AddWebResourceRequestedFilter("https://" + AppHost + "/*", CoreWebView2WebResourceContext.All);
+                core.WebResourceRequested += ServeInterface;
                 core.NavigationStarting += (s, e) =>
                 {
                     Uri uri;
@@ -87,6 +86,23 @@ namespace Dayfolio
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Close();
             }
+        }
+
+        private void ServeInterface(object sender, CoreWebView2WebResourceRequestedEventArgs args)
+        {
+            string path = new Uri(args.Request.Uri).AbsolutePath;
+            Stream asset = typeof(PlannerWindow).Assembly.GetManifestResourceStream("Dayfolio.UI" + path.Replace('/', '.'));
+            string type;
+            switch (Path.GetExtension(path))
+            {
+                case ".html": type = "text/html"; break;
+                case ".css": type = "text/css"; break;
+                case ".js": type = "text/javascript"; break;
+                default: type = "application/octet-stream"; break;
+            }
+            args.Response = view.CoreWebView2.Environment.CreateWebResourceResponse(asset,
+                asset == null ? 404 : 200, asset == null ? "Not Found" : "OK",
+                "Content-Type: " + type + "; charset=utf-8\r\nCache-Control: no-store");
         }
 
         private void ExportBackup(string json)
