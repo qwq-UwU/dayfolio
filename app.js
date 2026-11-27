@@ -94,7 +94,6 @@ function render(){
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
  $('month').textContent=monthly?cursor.getFullYear()+'年 '+(cursor.getMonth()+1)+'月':'全部任务'
  for(const id of ['prev','next','today'])$(id).hidden=!monthly
- $('reset').hidden=!filter && !Object.keys(db.categoryStates).length
  const periods=document.getElementById("periods");periods.hidden=!monthly
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
@@ -183,11 +182,6 @@ for(const [id,step] of [['prev',-1],['next',1]])$(id).onclick=()=>{
  render()
 }
 $('today').onclick=()=>{cursor=new Date();render()}
-$('reset').onclick=()=>{
- filter=null
- db.categoryStates={}
- save()
-}
 $('addList').onclick=()=>{
  const name=prompt('新建列表名称')?.trim()
  if(name&&!db.lists.includes(name)){db.lists.push(name);save()}
