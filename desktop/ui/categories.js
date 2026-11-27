@@ -29,7 +29,7 @@ function tagAncestors(key){
 }
 function tagOptions(select,parent='',exclude=null,forTask=false){
  select.replaceChildren()
- if(!forTask)select.add(new Option('顶层',''))
+ select.add(new Option(forTask?'未分类':'顶层',''))
  function visit(key,path){
   for(const child of orderedChildren(key)){
    const index=Number(child.slice(2))
@@ -91,6 +91,7 @@ split.onkeydown=e=>{
 $('treeWidth').onclick=()=>setTreeWidth(!document.body.classList.contains('wide-tree'))
 setTreeWidth(localStorage.getItem('dayfolio.wideTree')==='true')
 function effectiveState(category){
+ if(category==null)return 'shown'
  for(const key of tagAncestors('t:'+category)){
   const state=db.categoryStates[key.slice(2)]
   if(state)return state
@@ -251,7 +252,8 @@ function renderCategoryTags(){
    const button=el('button','folder-task'+(task.done?' finished':''))
    button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
    button.onclick=()=>edit(task)
-   const row=el('div','folder-task-row')
+   const row=el('div',effectiveState(task.cat)==='muted'?'folder-task-row muted-category':'folder-task-row')
+   row.dataset.taskId=task.id
    row.append(button,completionControl(task))
    return row
   })
@@ -299,7 +301,7 @@ function renderCategoryTags(){
    }
    return group
   })
-  if(parent)nodes.push(...taskRows(Number(parent.slice(2))))
+  nodes.push(...taskRows(parent?Number(parent.slice(2)):null))
   if(!nodes.length)nodes.push(el('p','empty-folder','暂无子标签或任务'))
   return nodes
  }
@@ -356,8 +358,50 @@ $('colorForm').onsubmit=e=>{
 }
 $('colorCancel').onclick=()=>$('colorEditor').close()
 $('addCat').onclick=()=>openCategory()
+function deleteTag(index){
+ const key='t:'+index,parent=db.categoryParents[index]??''
+ const location=parent?'「'+db.cats[parent.slice(2)]+'」':'顶层'
+ const children=orderedChildren(key)
+ const notes=['删除标签「'+db.cats[index]+'」？']
+ if(children.length)notes.push(children.length+' 个子标签将移到'+location+'。')
+ const count=db.items.filter(t=>t.cat===index).length
+ if(count)notes.push(count+' 项直属任务将移到'+(parent?location:'「未分类」')+'。')
+ if(!confirm(notes.join('\n')))return
+
+ // Task categories are positions in cats. Apply the same shift to every reference.
+ const shift=i=>i>index?i-1:i
+ const shiftKey=k=>k?'t:'+shift(Number(k.slice(2))):''
+ const order={...db.treeOrder}
+ order[parent]=orderedChildren(parent).flatMap(k=>k===key?children:[k])
+ delete order[key]
+ db.treeOrder=Object.fromEntries(Object.entries(order).map(([p,list])=>[shiftKey(p),list.map(shiftKey)]))
+ const parents={},accents={},states={},palette={}
+ db.cats.forEach((_,i)=>{
+  if(i===index)return
+  const j=shift(i),p=db.categoryParents[i]??''
+  parents[j]=shiftKey(p===key?parent:p)
+  if(db.categoryAccents?.[i])accents[j]=db.categoryAccents[i]
+  if(db.categoryStates[i])states[j]=db.categoryStates[i]
+  palette[j]=db.categoryPalette?.[i]??i
+ })
+ for(const task of db.items){
+  if(task.cat===index)task.cat=parent?shift(Number(parent.slice(2))):null
+  else if(task.cat!=null)task.cat=shift(task.cat)
+ }
+ db.cats.splice(index,1)
+ Object.assign(db,{categoryParents:parents,categoryAccents:accents,categoryStates:states,categoryPalette:palette})
+ db.expandedTags=[...expandedTags].filter(i=>i!==index).map(shift)
+ expandedTags.clear()
+ for(const i of db.expandedTags)expandedTags.add(i)
+ currentTag=shiftKey(currentTag===key?parent:currentTag)
+ localStorage.setItem('dayfolio.openTag',currentTag)
+ save()
+}
 const tagMenu=$('tagMenu')
 function showTagMenu(target,x,y){
+ const taskNode=target.closest('[data-task-id]')
+ const task=taskNode && db.items.find(t=>String(t.id)===taskNode.dataset.taskId)
+ if(!task && !target.closest('#categorySection'))return
  const tag=target.closest('.task-tag')
  const group=target.closest('.tag-group')
  const context=group?'t:'+group.firstElementChild.dataset.category:listLayout?currentTag:''
@@ -369,27 +413,37 @@ function showTagMenu(target,x,y){
   button.onclick=()=>{tagMenu.hidePopover();run()}
   tagMenu.append(button)
  }
- if(tag){
+ if(task){
+  action('删除任务',()=>deleteTask(task))
+ }else if(tag){
   const index=Number(tag.dataset.category)
   action('新建同级标签',()=>openCategory(null,db.categoryParents[index]??''))
   action('新建子标签',()=>openCategory(null,'t:'+index))
   action('编辑标签',()=>openCategory(index))
- }else action('新建标签',()=>openCategory(null,context))
+  action('新建任务',()=>newTaskForTag(index))
+  action('删除标签',()=>deleteTag(index))
+ }else{
+  action('新建标签',()=>openCategory(null,context))
+  action('新建任务',()=>newTaskForTag(context?Number(context.slice(2)):undefined))
+ }
+ tagMenu.setAttribute('aria-label',task?'任务操作':'标签操作')
  tagMenu.showPopover()
  tagMenu.style.left=Math.max(4,Math.min(x,innerWidth-tagMenu.offsetWidth-4))+'px'
  tagMenu.style.top=Math.max(4,Math.min(y,innerHeight-tagMenu.offsetHeight-4))+'px'
  tagMenu.firstElementChild.focus({preventScroll:true})
 }
-$('categorySection').oncontextmenu=e=>{
- e.preventDefault()
- if(!$('categorySection').classList.contains('moving-item'))showTagMenu(e.target,e.clientX,e.clientY)
+for(const surface of [$('categorySection'),$('view')]){
+ surface.oncontextmenu=e=>{
+  e.preventDefault()
+  if(!$('categorySection').classList.contains('moving-item'))showTagMenu(e.target,e.clientX,e.clientY)
+ }
+ surface.addEventListener('keydown',e=>{
+  if(e.key!=='ContextMenu' && !(e.shiftKey && e.key==='F10'))return
+  e.preventDefault()
+  const rect=e.target.getBoundingClientRect()
+  showTagMenu(e.target,rect.left,rect.bottom)
+ })
 }
-$('categorySection').addEventListener('keydown',e=>{
- if(e.key!=='ContextMenu' && !(e.shiftKey && e.key==='F10'))return
- e.preventDefault()
- const rect=e.target.getBoundingClientRect()
- showTagMenu(e.target,rect.left,rect.bottom)
-})
 tagMenu.onkeydown=e=>{
  if(!['ArrowUp','ArrowDown'].includes(e.key))return
  e.preventDefault()
@@ -415,6 +469,7 @@ $('categoryForm').onsubmit=e=>{
  if(oldParent!==parent && db.treeOrder[oldParent])db.treeOrder[oldParent]=db.treeOrder[oldParent].filter(k=>k!=='t:'+index)
  db.categoryParents[index]=parent
  if(parent){expandedTags.add(Number(parent.slice(2)));db.expandedTags=[...expandedTags]}
+ if(categoryIndex===null && db.categoryPalette)db.categoryPalette[index]=paletteIndex(index)
  db.cats[index]=name
  if(draftColor!==initialColor){
   db.categoryAccents??={}

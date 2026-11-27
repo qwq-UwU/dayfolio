@@ -43,9 +43,10 @@ function render(){
  if(!monthly){
   for(const t of items.slice().sort(taskListOrder)){
    const row=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row')
+   row.dataset.taskId=t.id
    const name=el('button',t.done?'finished':'',t.name)
    name.onclick=()=>edit(t)
-   const badge=el('span','category-badge',tagAncestors('t:'+t.cat).map(k=>db.cats[k.slice(2)]).join(' / '))
+   const badge=el('span','category-badge',t.cat==null?'未分类':tagAncestors('t:'+t.cat).map(k=>db.cats[k.slice(2)]).join(' / '))
    styleCategory(badge,t.cat)
    row.append(name,badge,el('small','',t.date+' '+range(t)),t.done?restoreButton(t):completionControl(t))
    view.append(row)
@@ -94,7 +95,7 @@ function daySegments(items,date){
  }
  return parts
 }
-function edit(t,date,minute=540){
+function edit(t,date,minute=540,category=listLayout && currentTag?Number(currentTag.slice(2)):db.cats.length?0:''){
  editing=t
  const start=t?.start??minute
  $('allDay').checked=t?t.start==null:false
@@ -103,12 +104,12 @@ function edit(t,date,minute=540){
  $('endTime').setCustomValidity('')
  updateTimeFields()
  $('nameField').value=t?.name||'';$('dateField').value=t?.date||date||key(now)
- tagOptions($('catField'),t?.cat??(listLayout && currentTag?Number(currentTag.slice(2)):0),null,true)
+ tagOptions($('catField'),t?(t.cat??''):category,null,true)
  $('done').checked=Boolean(t?.done)
  $('done').parentElement.hidden=Boolean(t?.done)
  $('restoreTask').hidden=!t?.done
  $('del').hidden=!t;$('editor').showModal()}
-$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value};if($('allDay').checked){data.start=null;data.end=null}
+$('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const cat=$('catField').value;const data={name,date:$('dateField').value,cat:cat===''?null:Number(cat)};if($('allDay').checked){data.start=null;data.end=null}
  else{
   data.start=minutes($('startTime').value)
   data.end=minutes($('endTime').value)
@@ -127,8 +128,18 @@ $('restoreTask').onclick=()=>{
  $('restoreTask').hidden=true
  save()
 }
-$('del').onclick=()=>{if(confirm('删除这个任务？')){db.items=db.items.filter(t=>t!==editing);$('editor').close();save()}}
-$('cancel').onclick=()=>$('editor').close();$('newTask').onclick=()=>edit(null,mode==='calendar'?key(cursor):key(now))
+function deleteTask(task){
+ if(!task || !confirm('删除任务「'+task.name+'」？'))return
+ db.items=db.items.filter(t=>t.id!==task.id)
+ if($('editor').open && editing===task)$('editor').close()
+ save()
+}
+function newTaskForTag(category){
+ edit(null,key(mode==='calendar'?cursor:now),540,category)
+}
+$('del').onclick=()=>deleteTask(editing)
+$('cancel').onclick=()=>$('editor').close()
+$('newTask').onclick=()=>newTaskForTag()
 for(const id of ['calendar','tasks'])$(id).onclick=()=>{mode=id;render()}
 for(const button of $('periods').children)button.onclick=()=>setPeriod(button.dataset.period)
 function setPeriod(value){

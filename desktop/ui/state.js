@@ -75,11 +75,20 @@ if(db.tagTreeVersion!==2){
  localStorage.setItem('dayfolio.v1',JSON.stringify(db))
  if(folderIndex>=0)localStorage.setItem('dayfolio.openTag','t:'+openIndex)
 }
+function paletteIndex(category){
+ if(category!==db.cats.length)return db.categoryPalette?.[category]??category
+ const used=new Set(db.cats.map((_,i)=>db.categoryPalette?.[i]??i))
+ let next=0
+ while(used.has(next))next++
+ return next
+}
 function categoryColors(category){
+ if(category==null)return ['#eef0ee','#869088']
  const accent=db.categoryAccents?.[category]
  if(accent)return [accent,'color-mix(in srgb, '+accent+' 72%, #385044)']
- if(colors[category])return colors[category]
- const hue=(345+(category-colors.length)*137.508)%360
+ const palette=paletteIndex(category)
+ if(colors[palette])return colors[palette]
+ const hue=(345+(palette-colors.length)*137.508)%360
  return ['hsl('+hue+' 48% 93%)','hsl('+hue+' 39% 52%)']
 }
 function styleCategory(node,category){

@@ -3,7 +3,7 @@ function readPlannerBackup(text){
  if(backup.format!=='dayfolio' || ![1,2].includes(backup.version))throw Error('请选择序日导出的日程文件。')
  const data=backup.data
  const invalid=()=>{throw Error('日程文件的数据不完整，请重新导出。')}
- if(!data || !Array.isArray(data.cats) || !data.cats.length ||
+ if(!data || !Array.isArray(data.cats) ||
     !data.cats.every(name=>typeof name==='string' && name.trim()) ||
     !Array.isArray(data.items))invalid()
  const legacy=backup.version===1
@@ -29,7 +29,7 @@ function readPlannerBackup(text){
  const ids=new Set()
  for(const t of data.items){
   if(!t || typeof t.id!=='string' || ids.has(t.id) || typeof t.name!=='string' ||
-     !Number.isInteger(t.cat) || t.cat<0 || t.cat>=data.cats.length ||
+     ((legacy || t.cat!==null) && (!Number.isInteger(t.cat) || t.cat<0 || t.cat>=data.cats.length)) ||
      typeof t.date!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(t.date) ||
      key(new Date(t.date+'T12:00:00'))!==t.date)invalid()
   if(t.start!=null || t.end!=null){
@@ -38,7 +38,7 @@ function readPlannerBackup(text){
   }
   ids.add(t.id)
  }
- for(const field of ['categoryParents','categoryAccents','categoryStates','treeOrder']){
+ for(const field of ['categoryParents','categoryAccents','categoryStates','categoryPalette','treeOrder']){
   const map=data[field]??{}
   if(typeof map!=='object' || Array.isArray(map))invalid()
   for(const [k,v] of Object.entries(map)){
@@ -50,6 +50,7 @@ function readPlannerBackup(text){
     if(field==='categoryParents' && v!=='' && !parents.has(v))invalid()
     if(field==='categoryAccents' && (typeof v!=='string' || !/^#[0-9a-f]{6}$/i.test(v)))invalid()
     if(field==='categoryStates' && !['shown','muted','hidden'].includes(v))invalid()
+    if(field==='categoryPalette' && (!Number.isSafeInteger(v) || v<0))invalid()
    }
   }
  }
