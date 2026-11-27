@@ -68,12 +68,8 @@ function migrateTagTree(data){
  data.tagTreeVersion=2
 }
 if(db.tagTreeVersion!==2){
- const previousFolder=localStorage.getItem('dayfolio.openFolder')
- const folderIndex=(db.folders??[]).findIndex(f=>f.id===previousFolder)
- const openIndex=db.cats.length+folderIndex
  migrateTagTree(db)
  localStorage.setItem('dayfolio.v1',JSON.stringify(db))
- if(folderIndex>=0)localStorage.setItem('dayfolio.openTag','t:'+openIndex)
 }
 function paletteIndex(category){
  if(category!==db.cats.length)return db.categoryPalette?.[category]??category
@@ -110,12 +106,12 @@ function styleCategory(node,category){
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 let savedPlanner=JSON.stringify(db)
 const undoSteps=[],redoSteps=[]
-function save({record=true,previousTag=currentTag}={}){
+function save({record=true}={}){
  const next=JSON.stringify(db)
  if(next!==savedPlanner){
   localStorage.setItem('dayfolio.v1',next)
   if(record){
-   undoSteps.push({data:savedPlanner,tag:previousTag})
+   undoSteps.push(savedPlanner)
    if(undoSteps.length>50)undoSteps.shift()
    redoSteps.length=0
   }
@@ -123,7 +119,7 @@ function save({record=true,previousTag=currentTag}={}){
  }
  render()
 }
-function usePlanner(data,tag){
+function usePlanner(data){
  db=data
  db.categoryParents??={}
  db.categoryStates??={}
@@ -131,17 +127,15 @@ function usePlanner(data,tag){
  editing=null
  expandedTags.clear()
  for(const index of db.expandedTags??[])expandedTags.add(index)
- currentTag=tag
- localStorage.setItem('dayfolio.openTag',tag)
 }
 function stepHistory(from,to){
  if(!from.length)return
  const step=from[from.length-1]
- localStorage.setItem('dayfolio.v1',step.data)
- to.push({data:savedPlanner,tag:currentTag})
+ localStorage.setItem('dayfolio.v1',step)
+ to.push(savedPlanner)
  from.pop()
- savedPlanner=step.data
- usePlanner(JSON.parse(step.data),step.tag)
+ savedPlanner=step
+ usePlanner(JSON.parse(step))
  render()
 }
 document.addEventListener('keydown',e=>{

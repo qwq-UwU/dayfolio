@@ -1,19 +1,5 @@
 const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
-let listLayout=localStorage.getItem('dayfolio.folderLayout')==='list'
-let currentTag=localStorage.getItem('dayfolio.openTag')||''
-if(!db.cats.some((_,i)=>currentTag==='t:'+i))currentTag=''
 const expandedTags=new Set(db.expandedTags??[])
-function enterTag(key){
- currentTag=key
- localStorage.setItem('dayfolio.openTag',key)
- $('taskTags').scrollTop=0
- renderCategoryTags()
-}
-for(const button of $('folderLayout').children)button.onclick=()=>{
- listLayout=button.value==='list'
- localStorage.setItem('dayfolio.folderLayout',button.value)
- renderCategoryTags()
-}
 function childTagKeys(parent){
  return db.cats.map((_,i)=>'t:'+i).filter(key=>(db.categoryParents[key.slice(2)]??'')===parent)
 }
@@ -254,20 +240,6 @@ function renderCategoryTags(){
   })
  }
  wireDrop($('treeRoot'),()=>({parent:'',where:'inside'}))
- for(const button of $('folderLayout').children)button.setAttribute('aria-pressed',String((button.value==='list')===listLayout))
- const path=$('folderPath')
- path.hidden=!listLayout
- path.replaceChildren()
- if(listLayout){
-  for(const key of ['',...tagAncestors(currentTag)]){
-   const link=el('button','',key?db.cats[key.slice(2)]:'全部标签')
-   link.onclick=()=>enterTag(key)
-   if(key===currentTag)link.setAttribute('aria-current','location')
-   wireDrop(link,()=>({parent:key,where:'inside'}))
-   if(path.childElementCount)path.append(el('span','','›'))
-   path.append(link)
-  }
- }
  const marks={inherit:'↳',shown:'✓',muted:'−',hidden:''}
  function taskRow(task){
   const button=el('button','folder-task'+(task.done?' finished':''))
@@ -290,11 +262,10 @@ function renderCategoryTags(){
   mark.setAttribute('aria-label',name+'，'+mark.title)
   mark.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
   const open=el('button','tag-open')
-  open.setAttribute('aria-expanded',String(!listLayout && expandedTags.has(i)))
-  open.append(el('span','tag-name',name),el('span','tag-chevron',!listLayout && expandedTags.has(i)?'▾':'▸'))
+  open.setAttribute('aria-expanded',String(expandedTags.has(i)))
+  open.append(el('span','tag-name',name),el('span','tag-chevron',expandedTags.has(i)?'▾':'▸'))
   open.onclick=()=>{
-   if(listLayout){enterTag('t:'+i);return}
-   else if(expandedTags.has(i))expandedTags.delete(i)
+   if(expandedTags.has(i))expandedTags.delete(i)
    else expandedTags.add(i)
    db.expandedTags=[...expandedTags]
    save({record:false})
@@ -325,8 +296,9 @@ function renderCategoryTags(){
    const tag=categoryTag(db.cats[i],i)
    wireItem(tag,{key,parent,category:i})
    group.append(tag)
-   if(!listLayout && expandedTags.has(i)){
+   if(expandedTags.has(i)){
     const children=el('div','folder-children')
+    children.style.setProperty('--group-color',categoryColors(i)[0])
     children.append(...contents(key))
     group.append(children)
    }
@@ -335,7 +307,7 @@ function renderCategoryTags(){
   if(!nodes.length)nodes.push(el('p','empty-folder','暂无子标签或任务'))
   return nodes
  }
- host.replaceChildren(...contents(listLayout?currentTag:''))
+ host.replaceChildren(...contents(''))
  host.scrollTop=scroll
 }
 
@@ -358,7 +330,7 @@ for(const [i,color] of presetColors.entries()){
  button.onclick=()=>selectColor(color)
  $('colorPresets').append(button)
 }
-function openCategory(index=null,parent=listLayout?currentTag:''){
+function openCategory(index=null,parent=''){
  categoryIndex=index
  tagOptions($('categoryParent'),index===null?parent:db.categoryParents[index],index)
  $('categoryTitle').textContent=index===null?'新建标签':'编辑标签'
@@ -389,7 +361,7 @@ $('colorForm').onsubmit=e=>{
 $('colorCancel').onclick=()=>$('colorEditor').close()
 $('addCat').onclick=()=>openCategory()
 function deleteTag(index){
- const key='t:'+index,parent=db.categoryParents[index]??''
+ const key='t:'+index
  const removed=new Set(),indices=new Map()
  db.cats.forEach((_,i)=>{
   if(tagAncestors('t:'+i).includes(key))removed.add(i)
@@ -398,7 +370,6 @@ function deleteTag(index){
  const count=db.items.filter(t=>removed.has(t.cat)).length
  const childCount=removed.size-1
  if((childCount>0 || count>0) && !confirm('删除「'+db.cats[index]+'」及其中的 '+childCount+' 个子标签、'+count+' 项任务？'))return
- const previousTag=currentTag
  const remapKey=k=>k?'t:'+indices.get(Number(k.slice(2))):''
  const order={},parents={},accents={},states={},palette={}
  for(const [p,children] of Object.entries(db.treeOrder)){
@@ -413,11 +384,10 @@ function deleteTag(index){
   palette[j]=db.categoryPalette?.[i]??i
  }
  const items=db.items.filter(t=>!removed.has(t.cat)).map(t=>({...t,cat:t.cat==null?null:indices.get(t.cat)}))
- const nextTag=currentTag && removed.has(Number(currentTag.slice(2)))?parent:currentTag
  usePlanner({...db,cats:db.cats.filter((_,i)=>indices.has(i)),items,treeOrder:order,
   categoryParents:parents,categoryAccents:accents,categoryStates:states,categoryPalette:palette,
-  expandedTags:[...expandedTags].filter(i=>indices.has(i)).map(i=>indices.get(i))},remapKey(nextTag))
- save({previousTag})
+  expandedTags:[...expandedTags].filter(i=>indices.has(i)).map(i=>indices.get(i))})
+ save()
 }
 const tagMenu=$('tagMenu')
 function showTagMenu(target,x,y){
@@ -426,7 +396,7 @@ function showTagMenu(target,x,y){
  if(!task && !target.closest('#categorySection'))return
  const tag=target.closest('.task-tag')
  const group=target.closest('.tag-group')
- const context=group?'t:'+group.firstElementChild.dataset.category:listLayout?currentTag:''
+ const context=group?'t:'+group.firstElementChild.dataset.category:''
  tagMenu.replaceChildren()
  function action(label,run){
   const button=el('button','',label)

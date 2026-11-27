@@ -27,6 +27,45 @@ function restoreButton(task){
  button.onclick=()=>{setTaskDone(task,false);save()}
  return button
 }
+function overviewTask(task){
+ const row=el('div',effectiveState(task.cat)==='muted'?'row muted-row':'row')
+ row.dataset.taskId=task.id
+ const name=el('button',task.done?'finished':'',task.name)
+ name.onclick=()=>edit(task)
+ row.append(name,el('small','',task.date+' · '+range(task)),task.done?restoreButton(task):completionControl(task))
+ return row
+}
+function renderOverview(view){
+ function group(category,children){
+  const name=db.cats[category]??'未分类'
+  const card=el('div','overview-group')
+  card.setAttribute('role','group')
+  card.setAttribute('aria-label',name)
+  card.style.setProperty('--group-color',categoryColors(category)[0])
+  const heading=el('div','overview-tag',name)
+  styleCategory(heading,category)
+  const body=el('div','overview-children')
+  body.append(...children)
+  if(!children.length)body.append(el('p','empty-folder','暂无任务'))
+  card.append(heading,body)
+  return card
+ }
+ function contents(parent){
+  const nodes=[],unassigned=[]
+  for(const {task,key,category} of orderedEntries(parent)){
+   if(task){
+    const rows=parent?nodes:unassigned
+    rows.push(overviewTask(task))
+   }else if(effectiveState(category)!=='hidden'){
+    nodes.push(group(category,contents(key)))
+   }
+  }
+  if(unassigned.length)nodes.push(group(null,unassigned))
+  return nodes
+ }
+ view.append(...contents(''))
+ if(!view.childElementCount)view.append(el('p','','暂无任务'))
+}
 function render(){
  renderCategoryTags()
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
@@ -40,25 +79,15 @@ function render(){
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
  $('prev').setAttribute('aria-label','向前'+unit);$('next').setAttribute('aria-label','向后'+unit)
- const items=db.items.filter(t=>effectiveState(t.cat)!=='hidden')
  const view=$('view')
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
- view.replaceChildren();view.className=monthly?'grid':''
+ view.replaceChildren();view.className=monthly?'grid':'overview'
  if(!monthly){
-  for(const t of items.slice().sort(taskListOrder)){
-   const row=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row')
-   row.dataset.taskId=t.id
-   const name=el('button',t.done?'finished':'',t.name)
-   name.onclick=()=>edit(t)
-   const badge=el('span','category-badge',t.cat==null?'未分类':tagAncestors('t:'+t.cat).map(k=>db.cats[k.slice(2)]).join(' / '))
-   styleCategory(badge,t.cat)
-   row.append(name,badge,el('small','',t.date+' '+range(t)),t.done?restoreButton(t):completionControl(t))
-   view.append(row)
-  }
-  if(!items.length)view.append(el('p','','暂无任务'))
+  renderOverview(view)
   return
  }
+ const items=db.items.filter(t=>effectiveState(t.cat)!=='hidden')
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -100,7 +129,7 @@ function daySegments(items,date){
  }
  return parts
 }
-function edit(t,date,minute=540,category=listLayout && currentTag?Number(currentTag.slice(2)):db.cats.length?0:''){
+function edit(t,date,minute=540,category=db.cats.length?0:''){
  editing=t
  const start=t?.start??minute
  $('allDay').checked=t?t.start==null:false
@@ -129,9 +158,7 @@ $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim()
  Object.assign(task,data)
  if(!editing)db.items.push(task)
  setTaskDone(task,$('done').checked)
- const previousTag=currentTag
- if(!editing && task.cat==null && listLayout && currentTag)enterTag('')
- $('editor').close();save({previousTag})}
+ $('editor').close();save()}
 $('restoreTask').onclick=()=>{
  if(!editing?.done)return
  setTaskDone(editing,false)

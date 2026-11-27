@@ -71,9 +71,8 @@ $('backupFile').onchange=async e=>{
  try{
   const data=readPlannerBackup(await file.text())
   if(!confirm('用备份中的 '+data.items.length+' 项任务、'+data.cats.length+' 个标签替换当前日程？'))return
-  const previousTag=currentTag
-  usePlanner(data,'')
+  usePlanner(data)
   $('displaySettings').close()
-  save({previousTag})
+  save()
  }catch(error){alert('导入失败。'+error.message)}
 }
