@@ -18,6 +18,19 @@ const seed = [
  [2,'制定本月计划',0,0],[4,'阅读与笔记',2,3],[6,'项目进度同步',0,1],[9,'设计方案评审',0,1],[11,'整理书单',2,3],[14,'周末徒步',1,2],[17,'产品迭代讨论',0,0],[19,'课程学习',2,3],[22,'家庭聚餐',1,2],[24,'更新项目文档',0,0],[26,'团队周会',0,1],[27,'月度工作复盘',0,0],[28,'公园慢跑',1,2]]
 let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {lists:['工作计划','个人生活','学习成长'],cats:['专注工作','会议沟通','生活日常','学习阅读'],items:seed.map(([day,name,list,cat],i)=>({id:String(i),name,list,cat,date:key(new Date(now.getFullYear(),now.getMonth(),day)),start:540+(i%5)*75,end:600+(i%5)*75,done:false}))}
 let mode='calendar',filter=null,editing=null
+if(!Array.isArray(db.hiddenCategories)){
+ db.hiddenCategories=[]
+ for(const [category] of db.cats.entries()){
+  const members=db.items.filter(task=>task.cat===category)
+  if(members.length && members.every(task=>task.hidden))db.hiddenCategories.push(category)
+ }
+ for(const task of db.items)delete task.hidden
+}
+function categoryColors(category){
+ if(colors[category])return colors[category]
+ const hue=(345+(category-colors.length)*137.508)%360
+ return ['hsl('+hue+' 48% 93%)','hsl('+hue+' 39% 52%)']
+}
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
 function renderLists(){
@@ -28,20 +41,22 @@ function renderLists(){
   return b
  }))
 }
-function renderTaskTags(){
+function renderCategoryTags(){
  const host=$('taskTags')
  const scroll=host.scrollTop
- host.replaceChildren(...db.items.map((task,i)=>{
+ host.replaceChildren(...db.cats.map((name,i)=>{
   const tag=el('button','task-tag')
-  const [bg,ink]=colors[task.cat%colors.length]
+  const [bg,ink]=categoryColors(i)
+  const visible=!db.hiddenCategories.includes(i)
   tag.style.setProperty('--bg',bg)
   tag.style.setProperty('--ink',ink)
-  tag.setAttribute('aria-pressed',String(!task.hidden))
-  const mark=el('span','tag-mark',task.hidden?'':'✓')
+  tag.setAttribute('aria-pressed',String(visible))
+  const mark=el('span','tag-mark',visible?'✓':'')
   mark.setAttribute('aria-hidden','true')
-  tag.append(mark,el('span','tag-name',task.name))
+  tag.append(mark,el('span','tag-name',name))
   tag.onclick=()=>{
-   task.hidden=!task.hidden
+   if(visible)db.hiddenCategories.push(i)
+   else db.hiddenCategories=db.hiddenCategories.filter(category=>category!==i)
    save()
    host.children[i]?.focus({preventScroll:true})
   }
@@ -50,23 +65,23 @@ function renderTaskTags(){
  host.scrollTop=scroll
 }
 function render(){
- renderLists();renderTaskTags()
+ renderLists();renderCategoryTags()
  const monthly=mode==='calendar', title=monthly?'日程日历':'任务总览'
  $('title').textContent=$('where').textContent=title
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
  $('month').textContent=monthly?cursor.getFullYear()+'年 '+(cursor.getMonth()+1)+'月':'全部任务'
  for(const id of ['prev','next','today'])$(id).hidden=!monthly
- $('reset').hidden=!filter && !db.items.some(task=>task.hidden)
+ $('reset').hidden=!filter && !db.hiddenCategories.length
  const periods=document.getElementById("periods");periods.hidden=!monthly
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
  $('prev').setAttribute('aria-label','向前'+unit);$('next').setAttribute('aria-label','向后'+unit)
- const items=db.items.filter(t=>!t.hidden && (!filter||t.list===filter.i))
+ const items=db.items.filter(t=>!db.hiddenCategories.includes(t.cat) && (!filter||t.list===filter.i))
  const view=$('view')
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
- if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div','row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);r.append(c,b,el('small','',db.cats[t.cat]+' · '+db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
+ if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div','row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);const [bg,ink]=categoryColors(t.cat);badge.style.backgroundColor=bg;badge.style.borderColor=ink;r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -147,7 +162,7 @@ for(const [id,step] of [['prev',-1],['next',1]])$(id).onclick=()=>{
 $('today').onclick=()=>{cursor=new Date();render()}
 $('reset').onclick=()=>{
  filter=null
- for(const task of db.items)delete task.hidden
+ db.hiddenCategories=[]
  save()
 }
 $('addList').onclick=()=>{
@@ -205,7 +220,7 @@ for(const id of ['startTime','endTime'])$(id).oninput=updateTimeFields
 function eventButton(t,timed=false,offset=0){
  const b=el('button','event'+(t.done?' finished':''))
  b.dataset.taskId=t.id
- const [bg,ink]=colors[t.cat%colors.length]
+ const [bg,ink]=categoryColors(t.cat)
  b.style.setProperty('--bg',bg)
  b.style.setProperty('--ink',ink)
  b.setAttribute('aria-label',t.name+' '+range(t))
@@ -423,7 +438,7 @@ function timelinePreview(body,grid){
    }
    if(!block){
     block=el('div','event drag-preview')
-    const [bg,ink]=colors[task.cat%colors.length]
+    const [bg,ink]=categoryColors(task.cat)
     block.style.setProperty('--bg',bg)
     block.style.setProperty('--ink',ink)
     block.append(el('strong','',task.name),el('span','preview-time'))
