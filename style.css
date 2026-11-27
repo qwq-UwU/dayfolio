@@ -90,3 +90,5 @@
 .color-fields { display: flex; gap: 12px; align-items: flex-end; margin: 14px 0 20px; }
 .color-fields label { flex: 1; margin: 0; }
 #categoryColor { width: 48px; }
+.time-col .event.muted-category { cursor: pointer; }
+.muted-row { color: #626e66; }

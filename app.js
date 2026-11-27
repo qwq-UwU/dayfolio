@@ -18,12 +18,14 @@ const seed = [
  [2,'制定本月计划',0,0],[4,'阅读与笔记',2,3],[6,'项目进度同步',0,1],[9,'设计方案评审',0,1],[11,'整理书单',2,3],[14,'周末徒步',1,2],[17,'产品迭代讨论',0,0],[19,'课程学习',2,3],[22,'家庭聚餐',1,2],[24,'更新项目文档',0,0],[26,'团队周会',0,1],[27,'月度工作复盘',0,0],[28,'公园慢跑',1,2]]
 let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {lists:['工作计划','个人生活','学习成长'],cats:['专注工作','会议沟通','生活日常','学习阅读'],items:seed.map(([day,name,list,cat],i)=>({id:String(i),name,list,cat,date:key(new Date(now.getFullYear(),now.getMonth(),day)),start:540+(i%5)*75,end:600+(i%5)*75,done:false}))}
 let mode='calendar',filter=null,editing=null
-if(!Array.isArray(db.hiddenCategories)){
- db.hiddenCategories=[]
+if(!db.categoryStates){
+ db.categoryStates={}
  for(const [category] of db.cats.entries()){
   const members=db.items.filter(task=>task.cat===category)
-  if(members.length && members.every(task=>task.hidden))db.hiddenCategories.push(category)
+  const hidden=db.hiddenCategories?.includes(category)??(members.length>0 && members.every(task=>task.hidden))
+  if(hidden)db.categoryStates[category]='hidden'
  }
+ delete db.hiddenCategories
  for(const task of db.items)delete task.hidden
 }
 function categoryColors(category){
@@ -35,6 +37,13 @@ function categoryColors(category){
 }
 function styleCategory(node,category){
  const [bg,ink]=categoryColors(category)
+ if(db.categoryStates[category]==='muted'){
+  node.classList.add('muted-category')
+  node.style.setProperty('--bg','color-mix(in srgb, '+bg+' 35%, white)')
+  node.style.setProperty('--ink','color-mix(in srgb, '+ink+' 50%, white)')
+  node.style.color='#58645d'
+  return
+ }
  node.style.setProperty('--bg',bg)
  node.style.setProperty('--ink',ink)
  const custom=db.categoryAccents?.[category]
@@ -62,10 +71,11 @@ function renderCategoryTags(){
  const scroll=host.scrollTop
  host.replaceChildren(...db.cats.map((name,i)=>{
   const tag=el('button','task-tag')
-  const visible=!db.hiddenCategories.includes(i)
+  const state=db.categoryStates[i]??'shown'
   styleCategory(tag,i)
-  tag.setAttribute('aria-pressed',String(visible))
-  const mark=el('span','tag-mark',visible?'✓':'')
+  tag.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
+  tag.setAttribute('aria-label',name+'，'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state])
+  const mark=el('span','tag-mark',{shown:'✓',muted:'−',hidden:''}[state])
   mark.setAttribute('aria-hidden','true')
   tag.append(mark,el('span','tag-name',name))
   tag.oncontextmenu=e=>{
@@ -73,8 +83,8 @@ function renderCategoryTags(){
    openCategory(i)
   }
   tag.onclick=()=>{
-   if(visible)db.hiddenCategories.push(i)
-   else db.hiddenCategories=db.hiddenCategories.filter(category=>category!==i)
+   if(state==='hidden')delete db.categoryStates[i]
+   else db.categoryStates[i]=state==='shown'?'muted':'hidden'
    save()
    host.children[i]?.focus({preventScroll:true})
   }
@@ -89,17 +99,17 @@ function render(){
  $('calendar').className=monthly?'active':'';$('tasks').className=monthly?'':'active'
  $('month').textContent=monthly?cursor.getFullYear()+'年 '+(cursor.getMonth()+1)+'月':'全部任务'
  for(const id of ['prev','next','today'])$(id).hidden=!monthly
- $('reset').hidden=!filter && !db.hiddenCategories.length
+ $('reset').hidden=!filter && !Object.keys(db.categoryStates).length
  const periods=document.getElementById("periods");periods.hidden=!monthly
  for(const btn of periods.children){btn.setAttribute('aria-pressed',String(period===btn.dataset.period))}
  const unit={day:'一天',threeDays:'三天',week:'一周',month:'一个月'}[period]
  $('prev').setAttribute('aria-label','向前'+unit);$('next').setAttribute('aria-label','向后'+unit)
- const items=db.items.filter(t=>!db.hiddenCategories.includes(t.cat) && (!filter||t.list===filter.i))
+ const items=db.items.filter(t=>db.categoryStates[t.cat]!=='hidden' && (!filter||t.list===filter.i))
  const view=$('view')
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
- if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div','row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
+ if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div',db.categoryStates[t.cat]==='muted'?'row muted-row':'row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -180,7 +190,7 @@ for(const [id,step] of [['prev',-1],['next',1]])$(id).onclick=()=>{
 $('today').onclick=()=>{cursor=new Date();render()}
 $('reset').onclick=()=>{
  filter=null
- db.hiddenCategories=[]
+ db.categoryStates={}
  save()
 }
 $('addList').onclick=()=>{
@@ -320,6 +330,7 @@ function chooseDay(current,candidate,point){
         crossed(point.clientY,from.top,to.top,to.height)?candidate:current
 }
 function bindTaskDrag(button,begin){
+ if(button.classList.contains('muted-category'))return
  button.onpointerdown=down=>{
   if(!down.isPrimary || down.button!==0)return
   const id=down.pointerId
@@ -674,9 +685,11 @@ function renderTimeline(view,items){
   col.onclick=e=>edit(null,date,clamp(minute(e),1439))
   for(const {task:part,lane,count:lanes} of overlaps(visible)){
    const b=eventButton(part.task,true,part.offset)
-   bindTimelineTask(b,part,col,true)
-   if(!part.offset)addResizeHandle(b,part,'start',col,previewBlocks,autoScroll)
-   if(part.task.end<=part.offset+1440)addResizeHandle(b,part,'end',col,previewBlocks,autoScroll)
+   if(db.categoryStates[part.task.cat]!=='muted'){
+    bindTimelineTask(b,part,col,true)
+    if(!part.offset)addResizeHandle(b,part,'start',col,previewBlocks,autoScroll)
+    if(part.task.end<=part.offset+1440)addResizeHandle(b,part,'end',col,previewBlocks,autoScroll)
+   }
    positionTask(b,part)
    b.style.left=(100*lane/lanes)+'%';b.style.width='calc('+100/lanes+'% - 2px)'
    col.append(b)
