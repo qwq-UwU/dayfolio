@@ -103,16 +103,16 @@
 .sample-area { margin: 20px 0; padding: 10px; border: 1px solid #e1e6e0; border-radius: 7px; }
 #mutedSample { margin: 0; padding: 6px 9px; }
 @media(max-width:760px){aside footer:has(#openSettings){display:block;padding-top:6px}}
-.tree-actions { display:flex; gap:2px; }
-.tree-actions button { font-size:11px; padding:4px; }
+#categorySection { flex:1; }
+.tree-controls { position:relative; }
 .folder-children { display:grid; gap:5px; padding-left:7px; margin-left:4px; border-left:1px solid #d1dcd3; }
 .folder-children:empty { display:none; }
 #taskTags { max-height:55vh; }
 #treeWidth { width:auto; font-size:11px; padding:3px 7px; }
-.tree-actions { margin:0 6px 5px; }
-section .tree-actions button { width:auto; padding:4px 6px; }
 #treeRoot { display:none; text-align:center; padding:7px; border:1px dashed #8ca998; border-radius:5px; font-size:12px; }
-.tree-actions { position:relative; }
+#tagMenu { position:fixed; inset:auto; margin:0; min-width:134px; padding:4px; border:1px solid #d4ded6; border-radius:8px; color:inherit; background:white; box-shadow:0 4px 16px #213b2b22; }
+#tagMenu button { display:block; width:100%; padding:6px 10px; text-align:left; font-size:13px; }
+#tagMenu button:focus-visible { outline:2px solid #779582; outline-offset:-2px; }
 .moving-item #treeRoot { display:grid; place-items:center; position:absolute; inset:0; padding:0; background:#f6f8f5; }
 #categorySection [data-drop=inside] { background:#e0eddf; outline:2px solid #58826b; outline-offset:-2px; }
 .category-gap { min-width:0; }

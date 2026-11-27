@@ -263,7 +263,8 @@ function renderCategoryTags(){
   tag.dataset.category=i
   styleCategory(tag,i)
   const mark=el('button','state-circle',hasChildren && own==='inherit'?'↳':marks[state])
-  mark.title=stateLabels[own]+' · 当前'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state]
+  const visibleState={shown:'显示',muted:'淡化',hidden:'隐藏'}[state]
+  mark.title=hasChildren?stateLabels[own]+' · 当前'+visibleState:visibleState
   mark.setAttribute('aria-label',name+'，'+mark.title)
   mark.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
   const open=el('button','tag-open')
@@ -277,10 +278,6 @@ function renderCategoryTags(){
    save()
   }
   tag.append(mark,open)
-  tag.oncontextmenu=e=>{
-   e.preventDefault()
-   openCategory(i)
-  }
   mark.onclick=()=>{
    if(own==='hidden')delete db.categoryStates[i]
    else db.categoryStates[i]=own==='inherit' && hasChildren?'shown':own==='muted'?'hidden':'muted'
@@ -329,9 +326,9 @@ for(const [i,color] of presetColors.entries()){
  button.onclick=()=>selectColor(color)
  $('colorPresets').append(button)
 }
-function openCategory(index=null){
+function openCategory(index=null,parent=listLayout?currentTag:''){
  categoryIndex=index
- tagOptions($('categoryParent'),index===null && listLayout?currentTag:db.categoryParents[index],index)
+ tagOptions($('categoryParent'),index===null?parent:db.categoryParents[index],index)
  $('categoryTitle').textContent=index===null?'新建标签':'编辑标签'
  $('categoryName').value=db.cats[index]??''
  $('categoryName').setCustomValidity('')
@@ -358,7 +355,48 @@ $('colorForm').onsubmit=e=>{
  $('colorEditor').close()
 }
 $('colorCancel').onclick=()=>$('colorEditor').close()
-$('addCat').onclick=$('newCategory').onclick=()=>openCategory()
+$('addCat').onclick=()=>openCategory()
+const tagMenu=$('tagMenu')
+function showTagMenu(target,x,y){
+ const tag=target.closest('.task-tag')
+ const group=target.closest('.tag-group')
+ const context=group?'t:'+group.firstElementChild.dataset.category:listLayout?currentTag:''
+ tagMenu.replaceChildren()
+ function action(label,run){
+  const button=el('button','',label)
+  button.type='button'
+  button.setAttribute('role','menuitem')
+  button.onclick=()=>{tagMenu.hidePopover();run()}
+  tagMenu.append(button)
+ }
+ if(tag){
+  const index=Number(tag.dataset.category)
+  action('新建同级标签',()=>openCategory(null,db.categoryParents[index]??''))
+  action('新建子标签',()=>openCategory(null,'t:'+index))
+  action('编辑标签',()=>openCategory(index))
+ }else action('新建标签',()=>openCategory(null,context))
+ tagMenu.showPopover()
+ tagMenu.style.left=Math.max(4,Math.min(x,innerWidth-tagMenu.offsetWidth-4))+'px'
+ tagMenu.style.top=Math.max(4,Math.min(y,innerHeight-tagMenu.offsetHeight-4))+'px'
+ tagMenu.firstElementChild.focus({preventScroll:true})
+}
+$('categorySection').oncontextmenu=e=>{
+ e.preventDefault()
+ if(!$('categorySection').classList.contains('moving-item'))showTagMenu(e.target,e.clientX,e.clientY)
+}
+$('categorySection').addEventListener('keydown',e=>{
+ if(e.key!=='ContextMenu' && !(e.shiftKey && e.key==='F10'))return
+ e.preventDefault()
+ const rect=e.target.getBoundingClientRect()
+ showTagMenu(e.target,rect.left,rect.bottom)
+})
+tagMenu.onkeydown=e=>{
+ if(!['ArrowUp','ArrowDown'].includes(e.key))return
+ e.preventDefault()
+ const buttons=[...tagMenu.children]
+ const next=buttons.indexOf(document.activeElement)+(e.key==='ArrowUp'?-1:1)
+ buttons[(next+buttons.length)%buttons.length].focus()
+}
 $('categoryCancel').onclick=()=>$('categoryEditor').close()
 $('categoryName').oninput=()=>$('categoryName').setCustomValidity('')
 $('categoryParent').onchange=()=>$('categoryName').setCustomValidity('')
