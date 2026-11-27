@@ -12,12 +12,16 @@ function chooseDay(current,candidate,point){
 }
 function bindTaskDrag(button,begin){
  if(button.classList.contains('muted-category'))return
+ bindPointerDrag(button,begin)
+}
+function bindPointerDrag(button,begin){
  button.onpointerdown=down=>{
   if(!down.isPrimary || down.button!==0)return
   const id=down.pointerId
   const gesture=begin(down)
   let moving=false
-  button.setPointerCapture(id)
+  const capture=down.target.closest('button') || button
+  capture.setPointerCapture(id)
   const move=e=>{
    if(e.pointerId!==id)return
    if(!moving && Math.hypot(e.clientX-down.clientX,e.clientY-down.clientY)<5)return
@@ -30,9 +34,10 @@ function bindTaskDrag(button,begin){
    document.removeEventListener('pointermove',move)
    document.removeEventListener('pointerup',finish)
    document.removeEventListener('pointercancel',finish)
-   button.onlostpointercapture=null
+   capture.removeEventListener('lostpointercapture',finish)
    window.removeEventListener('keydown',escape)
-   if(button.hasPointerCapture(id))button.releasePointerCapture(id)
+   window.removeEventListener('blur',cancel)
+   if(capture.hasPointerCapture(id))capture.releasePointerCapture(id)
    if(!moving)return
    if(commit)gesture.move(e)
    const suppress=click=>{click.preventDefault();click.stopImmediatePropagation()}
@@ -40,12 +45,14 @@ function bindTaskDrag(button,begin){
    setTimeout(()=>document.removeEventListener('click',suppress,true),0)
    gesture.finish(commit)
   }
-  const escape=e=>{if(e.key==='Escape')finish({pointerId:id,type:'cancel'})}
+  const cancel=()=>finish({pointerId:id,type:'cancel'})
+  const escape=e=>{if(e.key==='Escape')cancel()}
+  window.addEventListener('blur',cancel)
   window.addEventListener('keydown',escape)
   document.addEventListener('pointermove',move)
   document.addEventListener('pointerup',finish)
   document.addEventListener('pointercancel',finish)
-  button.onlostpointercapture=finish
+  capture.addEventListener('lostpointercapture',finish)
  }
 }
 function snapMinute(value, min, max){

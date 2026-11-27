@@ -124,102 +124,131 @@ function renderCategoryTags(){
  const scroll=host.scrollTop
  const section=$('categorySection')
  const targets=new Map()
- const slot=el('div','category-drop-slot')
- slot.setAttribute('aria-hidden','true')
- let source=null,sourceRow=null,preview=null
- function clearMark(){
-  if(preview)delete preview.node.dataset.drop
-  slot.remove()
-  preview=null
- }
- function stop(){
-  sourceRow?.classList.remove('category-drag-source')
-  sourceRow=null
-  source=null
-  clearMark()
-  section.classList.remove('moving-item')
- }
- function allow(parent){
-  if(!source)return false
-  if(!source.folder)return true
-  for(let id=parent;id;){
-   if(id===source.folder.id)return false
-   id=db.folders.find(f=>f.id===id)?.parent
-  }
-  return !db.folders.some(f=>f!==source.folder && f.parent===parent && f.name===source.folder.name)
- }
  function wireDrop(node,resolve){
   node.dataset.dropTarget=''
   targets.set(node,resolve)
  }
- function destination(e){
-  if(!source)return null
-  const node=e.target.closest('[data-drop-target]')
-  if(!node && slot.isConnected){
-   // Keep the same destination over the slot and its surrounding grid gap.
-   const rect=slot.getBoundingClientRect()
-   if(e.clientX>=rect.left && e.clientX<=rect.right &&
-      e.clientY>=rect.top-6 && e.clientY<=rect.bottom+6)return preview
+ function commit(item,dest){
+  const order=orderedChildren(dest.parent).filter(key=>key!==item.key)
+  const index=dest.where==='inside'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
+  order.splice(index,0,item.key)
+  if(item.parent!==dest.parent && db.treeOrder[item.parent]){
+   db.treeOrder[item.parent]=db.treeOrder[item.parent].filter(key=>key!==item.key)
   }
-  const dest=targets.get(node)?.(e)
-  if(!dest || dest.key===source.key || !allow(dest.parent))return null
-  return {node,...dest}
+  db.treeOrder[dest.parent]=order
+  if(item.folder)item.folder.parent=dest.parent
+  else db.categoryParents[item.category]=dest.parent
+  if(dest.where==='inside' && dest.parent)db.folders.find(f=>f.id===dest.parent).closed=false
+  save()
  }
- section.ondragover=e=>{
-  if(!source)return
-  const dest=destination(e)
-  if(!dest){clearMark();return}
-  e.preventDefault()
-  e.dataTransfer.dropEffect='move'
-  if(dest.node===preview?.node && dest.where===preview.where)return
-  clearMark()
-  preview=dest
-  if(dest.where==='inside')dest.node.dataset.drop='inside'
-  else{
-   const group=dest.node.parentElement
-   if(dest.where==='before')group.before(slot)
-   else group.after(slot)
-  }
- }
- section.ondragleave=e=>{if(e.relatedTarget && !section.contains(e.relatedTarget))clearMark()}
- section.ondrop=e=>{
-   const dest=destination(e)
-   if(!dest){stop();return}
-   e.preventDefault()
-   const order=orderedChildren(dest.parent).filter(key=>key!==source.key)
-   const index=dest.where==='inside'?order.length:order.indexOf(dest.key)+(dest.where==='after'?1:0)
-   order.splice(index,0,source.key)
-   if(source.parent!==dest.parent && db.treeOrder[source.parent]){
-    db.treeOrder[source.parent]=db.treeOrder[source.parent].filter(k=>k!==source.key)
-   }
-   db.treeOrder[dest.parent]=order
-   if(source.folder)source.folder.parent=dest.parent
-   else db.categoryParents[source.category]=dest.parent
-   if(dest.where==='inside' && dest.parent)db.folders.find(f=>f.id===dest.parent).closed=false
-   stop()
-   save()
- }
- function wireItem(node,item){
-  node.draggable=true
-  node.ondragstart=e=>{
-   source=item
-   sourceRow=node
-   const style=getComputedStyle(node)
-   slot.style.setProperty('--slot-color',style.getPropertyValue('--bg').trim() || '#dae4db')
-   slot.style.height=node.getBoundingClientRect().height+'px'
-   slot.textContent=item.folder?item.folder.name:db.cats[item.category]
-   e.dataTransfer.effectAllowed='move'
-   e.dataTransfer.setData('text/plain',node.textContent)
-   // Let the system capture the full row before dimming its original position.
-   requestAnimationFrame(()=>{if(sourceRow===node)node.classList.add('category-drag-source')})
-   section.classList.add('moving-item')
-  }
-  node.ondragend=stop
-  wireDrop(node,e=>{
-   const rect=node.getBoundingClientRect()
-   const fraction=(e.clientY-rect.top)/rect.height
+ function wireItem(row,item){
+  wireDrop(row,fraction=>{
    if(item.folder && fraction>=0.22 && fraction<=0.78)return {key:item.key,parent:item.folder.id,where:'inside'}
    return {key:item.key,parent:item.parent,where:fraction<0.5?'before':'after'}
+  })
+  bindPointerDrag(row,down=>{
+   const group=row.parentElement, rect=row.getBoundingClientRect()
+   const gap=el('div','category-gap')
+   gap.setAttribute('aria-hidden','true')
+   gap.style.height=rect.height+'px'
+   const animations=new Map()
+   const reduced=matchMedia('(prefers-reduced-motion:reduce)').matches
+   let active=false, dest=null, gapTarget=null, point=down, frame=0
+   function allowed(target){
+    if(target.key===item.key)return false
+    if(!item.folder)return true
+    for(let id=target.parent;id;id=db.folders.find(f=>f.id===id)?.parent){
+     if(id===item.folder.id)return false
+    }
+    return !db.folders.some(f=>f!==item.folder && f.parent===target.parent && f.name===item.folder.name)
+   }
+   function place(anchor,where){
+    if(where==='before'?gap.nextElementSibling===anchor:gap.previousElementSibling===anchor)return
+    const positions=new Map()
+    if(!reduced){
+     for(const node of host.querySelectorAll('.task-tag,.folder-row')){
+      if(node!==row && node.offsetHeight)positions.set(node,node.getBoundingClientRect().top)
+     }
+    }
+    if(where==='before')anchor.before(gap)
+    else anchor.after(gap)
+    for(const [node,top] of positions){
+     animations.get(node)?.cancel()
+     const offset=top-node.getBoundingClientRect().top
+     if(Math.abs(offset)>1){
+      animations.set(node,node.animate([{transform:'translateY('+offset+'px)'},{transform:'none'}],
+       {duration:150,easing:'cubic-bezier(.2,.8,.2,1)'}))
+     }
+    }
+   }
+   function targetAt(x,y){
+    const hit=document.elementFromPoint(x,y)
+    if(!hit || !section.contains(hit))return null
+    if(hit===gap)return gapTarget
+    const container=hit.closest('.folder-group,.tag-group')
+    const node=container?.firstElementChild || hit.closest('[data-drop-target]')
+    const resolve=targets.get(node)
+    if(resolve){
+     // Hit-test the stationary layout, independently of the visual swap animation.
+     const top=container?container.getBoundingClientRect().top+container.clientTop+parseFloat(getComputedStyle(container).paddingTop):node.getBoundingClientRect().top
+     const fraction=(y-top)/node.offsetHeight
+     if(fraction<0 || fraction>1)return null
+     const target=resolve(fraction)
+     return allowed(target)?{node,...target}:null
+    }
+    const box=gap.getBoundingClientRect()
+    return x>=box.left && x<=box.right && y>=box.top-6 && y<=box.bottom+6?gapTarget:null
+   }
+   function updateTarget(){
+    const next=targetAt(point.clientX,point.clientY)
+    if(next?.node===dest?.node && next?.where===dest?.where)return
+    if(dest)delete dest.node.dataset.drop
+    dest=next
+    if(!dest)return
+    if(dest.where==='inside')dest.node.dataset.drop='inside'
+    else{
+     gapTarget=dest
+     place(dest.node.parentElement,dest.where)
+    }
+   }
+   function scrollEdge(){
+    frame=0
+    const box=host.getBoundingClientRect(), x=point.clientX, y=point.clientY
+    if(x<box.left || x>box.right || y<box.top || y>box.bottom)return
+    const zone=Math.min(32,box.height/3)
+    const speed=Math.max(0,y-box.bottom+zone)-Math.max(0,box.top+zone-y)
+    const before=host.scrollTop
+    host.scrollTop+=Math.sign(speed)*Math.ceil(Math.abs(speed)/3)
+    if(host.scrollTop!==before){updateTarget();frame=requestAnimationFrame(scrollEdge)}
+   }
+   return {
+    move(e){
+     point=e
+     if(!active){
+      active=true
+      group.before(gap)
+      row.style.width=rect.width+'px'
+      row.style.height=rect.height+'px'
+      group.classList.add('lifted-group')
+      row.classList.add('lifted-row')
+      section.classList.add('moving-item')
+     }
+     row.style.transform='translate('+ (rect.left+e.clientX-down.clientX)+'px,'+(rect.top+e.clientY-down.clientY)+'px)'
+     updateTarget()
+     if(!frame)frame=requestAnimationFrame(scrollEdge)
+    },
+    finish(accepted){
+     cancelAnimationFrame(frame)
+     for(const animation of animations.values())animation.cancel()
+     if(dest)delete dest.node.dataset.drop
+     gap.remove()
+     section.classList.remove('moving-item')
+     group.classList.remove('lifted-group')
+     row.classList.remove('lifted-row')
+     for(const prop of ['width','height','transform'])row.style.removeProperty(prop)
+     if(accepted && dest)commit(item,dest)
+    }
+   }
   })
  }
  wireDrop($('treeRoot'),()=>({parent:'',where:'inside'}))
