@@ -2,8 +2,20 @@
  <form id="categoryForm">
   <h2 id="categoryTitle">新建分类</h2>
   <label>分类名称<input id="categoryName" required autofocus></label>
-  <label>标签颜色<input id="categoryColor" type="color"></label>
+  <fieldset class="palette"><legend>标签颜色</legend>
+   <div id="colorPresets"></div>
+   <button type="button" id="customColor">自定义颜色…</button>
+  </fieldset>
   <div class="actions"><button id="categoryCancel" type="button">取消</button><button class="primary">保存</button></div>
+ </form>
+</dialog>
+<dialog id="colorEditor" aria-labelledby="colorTitle">
+ <form id="colorForm">
+  <h3 id="colorTitle">自定义颜色</h3>
+  <div class="color-fields"><input id="categoryColor" type="color" aria-label="选择颜色">
+   <label>HEX 色值<input id="hexColor" required pattern="#?[0-9A-Fa-f]{6}" maxlength="7" spellcheck="false" autocomplete="off"></label>
+  </div>
+  <div class="actions"><button type="button" id="colorCancel">取消</button><button class="primary">使用此颜色</button></div>
  </form>
 </dialog><script src="app.js"></script></body></html>
 

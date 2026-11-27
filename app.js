@@ -28,10 +28,24 @@ if(!Array.isArray(db.hiddenCategories)){
 }
 function categoryColors(category){
  const accent=db.categoryAccents?.[category]
- if(accent)return ['color-mix(in srgb, '+accent+' 17%, white)',accent]
+ if(accent)return [accent,'color-mix(in srgb, '+accent+' 72%, #385044)']
  if(colors[category])return colors[category]
  const hue=(345+(category-colors.length)*137.508)%360
  return ['hsl('+hue+' 48% 93%)','hsl('+hue+' 39% 52%)']
+}
+function styleCategory(node,category){
+ const [bg,ink]=categoryColors(category)
+ node.style.setProperty('--bg',bg)
+ node.style.setProperty('--ink',ink)
+ const custom=db.categoryAccents?.[category]
+ if(custom){
+  const channels=custom.slice(1).match(/../g).map(hex=>{
+   const s=parseInt(hex,16)/255
+   return s<=0.04045?s/12.92:((s+0.055)/1.055)**2.4
+  })
+  const luminance=channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722
+  node.style.color=luminance<0.179?'white':'#101510'
+ }
 }
 function el(tag,cls,txt){const n=document.createElement(tag);n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
 function save(){localStorage.setItem('dayfolio.v1',JSON.stringify(db));render()}
@@ -48,10 +62,8 @@ function renderCategoryTags(){
  const scroll=host.scrollTop
  host.replaceChildren(...db.cats.map((name,i)=>{
   const tag=el('button','task-tag')
-  const [bg,ink]=categoryColors(i)
   const visible=!db.hiddenCategories.includes(i)
-  tag.style.setProperty('--bg',bg)
-  tag.style.setProperty('--ink',ink)
+  styleCategory(tag,i)
   tag.setAttribute('aria-pressed',String(visible))
   const mark=el('span','tag-mark',visible?'✓':'')
   mark.setAttribute('aria-hidden','true')
@@ -87,7 +99,7 @@ function render(){
  const previous=view.querySelector('.time-scroll')
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
- if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div','row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);const [bg,ink]=categoryColors(t.cat);badge.style.backgroundColor=bg;badge.style.borderColor=ink;r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
+ if(!monthly){for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){const r=el('div','row'),c=el('input',''),b=el('button',t.done?'finished':'',t.name);c.type='checkbox';c.checked=t.done;c.setAttribute('aria-label','完成 '+t.name);c.onchange=()=>{t.done=c.checked;save()};b.onclick=()=>edit(t);const badge=el('span','category-badge',db.cats[t.cat]);styleCategory(badge,t.cat);r.append(c,b,badge,el('small','',db.lists[t.list]+' · '+t.date+' '+range(t)));view.append(r)}if(!items.length)view.append(el('p','','暂无任务'));return}
  if(period!=='month'){renderTimeline(view,items);return}
  for(const day of '一二三四五六日')view.append(el('div','weekday','周'+day))
  const offset=(new Date(cursor.getFullYear(),cursor.getMonth(),1).getDay()+6)%7,total=new Date(cursor.getFullYear(),cursor.getMonth()+1,0).getDate()
@@ -176,7 +188,24 @@ $('addList').onclick=()=>{
  if(name&&!db.lists.includes(name)){db.lists.push(name);save()}
 }
 let categoryIndex=null
-let initialAccent=''
+const presetColors=[...colors.map(pair=>pair[0]),'#f4d7dd','#f7e7ae','#c7e6e5','#d5dade']
+let initialColor='',draftColor=''
+function selectColor(value){
+ draftColor=value.toLowerCase()
+ for(const button of $('colorPresets').children){
+  button.setAttribute('aria-pressed',String(button.dataset.color===draftColor))
+ }
+ $('customColor').style.setProperty('--sample',draftColor)
+}
+for(const [i,color] of presetColors.entries()){
+ const button=el('button','swatch')
+ button.type='button'
+ button.dataset.color=color
+ button.style.backgroundColor=color
+ button.setAttribute('aria-label',['鼠尾草绿','雾蓝','杏色','淡紫','浅玫瑰','奶黄','青瓷','雾灰'][i])
+ button.onclick=()=>selectColor(color)
+ $('colorPresets').append(button)
+}
 function openCategory(index=null){
  categoryIndex=index
  $('categoryTitle').textContent=index===null?'新建分类':'编辑分类'
@@ -184,12 +213,27 @@ function openCategory(index=null){
  $('categoryName').setCustomValidity('')
  // The native color input expects hex, including for older HSL-based defaults.
  const context=document.createElement('canvas').getContext('2d')
- context.fillStyle=categoryColors(index??db.cats.length)[1]
- initialAccent=context.fillStyle
- $('categoryColor').value=initialAccent
+ context.fillStyle=categoryColors(index??db.cats.length)[0]
+ initialColor=context.fillStyle
+ selectColor(initialColor)
  $('categoryEditor').showModal()
  $('categoryName').select()
 }
+$('customColor').onclick=()=>{
+ $('categoryColor').value=$('hexColor').value=draftColor
+ $('colorEditor').showModal()
+ $('hexColor').select()
+}
+$('categoryColor').oninput=()=>{$('hexColor').value=$('categoryColor').value}
+$('hexColor').oninput=()=>{
+ if($('hexColor').validity.valid)$('categoryColor').value='#'+$('hexColor').value.replace(/^#/,'')
+}
+$('colorForm').onsubmit=e=>{
+ e.preventDefault()
+ selectColor('#'+$('hexColor').value.replace(/^#/,''))
+ $('colorEditor').close()
+}
+$('colorCancel').onclick=()=>$('colorEditor').close()
 $('addCat').onclick=$('newCategory').onclick=()=>openCategory()
 $('categoryCancel').onclick=()=>$('categoryEditor').close()
 $('categoryName').oninput=()=>$('categoryName').setCustomValidity('')
@@ -203,9 +247,9 @@ $('categoryForm').onsubmit=e=>{
  }
  const index=categoryIndex??db.cats.length
  db.cats[index]=name
- if($('categoryColor').value!==initialAccent){
+ if(draftColor!==initialColor){
   db.categoryAccents??={}
-  db.categoryAccents[index]=$('categoryColor').value
+  db.categoryAccents[index]=draftColor
  }
  if($('editor').open){
   $('catField').replaceChildren(...db.cats.map((label,i)=>new Option(label,i)))
@@ -256,9 +300,7 @@ for(const id of ['startTime','endTime'])$(id).oninput=updateTimeFields
 function eventButton(t,timed=false,offset=0){
  const b=el('button','event'+(t.done?' finished':''))
  b.dataset.taskId=t.id
- const [bg,ink]=categoryColors(t.cat)
- b.style.setProperty('--bg',bg)
- b.style.setProperty('--ink',ink)
+ styleCategory(b,t.cat)
  b.setAttribute('aria-label',t.name+' '+range(t))
  if(timed)b.append(el('strong','',t.name),el('span','event-time',range(t)))
  else b.textContent=(offset?'续至 '+clock(t.end)+' ':t.start==null?'':clock(t.start)+' ')+t.name
@@ -474,9 +516,7 @@ function timelinePreview(body,grid){
    }
    if(!block){
     block=el('div','event drag-preview')
-    const [bg,ink]=categoryColors(task.cat)
-    block.style.setProperty('--bg',bg)
-    block.style.setProperty('--ink',ink)
+    styleCategory(block,task.cat)
     block.append(el('strong','',task.name),el('span','preview-time'))
     col.append(block)
     blocks.set(col,block)
