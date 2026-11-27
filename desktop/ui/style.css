@@ -105,14 +105,8 @@
 @media(max-width:760px){aside footer:has(#openSettings){display:block;padding-top:6px}}
 .tree-actions { display:flex; gap:2px; }
 .tree-actions button { font-size:11px; padding:4px; }
-.folder-group { min-width:0; padding:4px 0; }
-.folder-row { display:flex; align-items:center; gap:2px; }
-.folder-row button.folder-expand { width:24px; padding:5px; text-align:center; }
-.folder-row button.folder-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:5px 0; font-weight:600; }
-.folder-state { width:auto; max-width:100%; margin:2px 0 5px; padding:2px 5px; font-size:11px; }
 .folder-children { display:grid; gap:5px; padding-left:7px; margin-left:4px; border-left:1px solid #d1dcd3; }
 .folder-children:empty { display:none; }
-.inherited-state { display:block; margin-bottom:4px; letter-spacing:0; }
 #taskTags { max-height:55vh; }
 #treeWidth { width:auto; font-size:11px; padding:3px 7px; }
 .tree-actions { margin:0 6px 5px; }
@@ -124,10 +118,9 @@ section .tree-actions button { width:auto; padding:4px 6px; }
 .category-gap { min-width:0; }
 #taskTags .lifted-group { display:contents; }
 .lifted-group > :not(.lifted-row) { display:none; }
-.moving-item :is(.folder-row,.task-tag) { pointer-events:none; }
+.moving-item .task-tag { pointer-events:none; }
 #taskTags .lifted-row { position:fixed; top:0; left:0; z-index:20; opacity:1; }
-#taskTags .folder-row.lifted-row { background:#f6f8f5; border-radius:6px; }
-.folder-row, .folder-name, #taskTags .task-tag { cursor:grab; touch-action:none; user-select:none; }
+#taskTags .task-tag { cursor:grab; touch-action:none; user-select:none; }
 body:has(.moving-item), body:has(.moving-item) * { cursor:grabbing; }
 body.wide-tree aside { width:var(--panel-size,50%); }
 body.wide-tree #taskTags { max-height:68vh; }
@@ -142,12 +135,6 @@ body.wide-tree #taskTags { max-height:68vh; }
 #folderPath { display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:3px 0; color:#607569; }
 #folderPath button { width:auto; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:4px; font-size:12px; }
 #folderPath [aria-current] { font-weight:650; color:#283f32; }
-.folder-list .folder-group { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; gap:3px; }
-.folder-list .folder-row { min-width:0; gap:6px; min-height:34px; }
-.folder-list .folder-state { margin:0; width:68px; }
-.folder-list .inherited-state { grid-column:1/-1; }
-.folder-glyph { width:16px; height:11px; position:relative; flex:none; margin:3px 0 0 3px; border:1px solid #7a8d80; border-radius:2px; }
-.folder-glyph::before { content:""; position:absolute; width:7px; height:3px; left:-1px; top:-4px; border:1px solid #7a8d80; border-bottom:0; border-radius:2px 2px 0 0; }
 .empty-folder { font-size:12px; color:#68766e; padding:7px; margin:0; }
 #treeWidth { border:1px solid #bacbbf; border-radius:5px; padding:4px 9px; }
 #panelDivider { display:none; }
@@ -168,18 +155,27 @@ body.wide-tree #taskTags { max-height:68vh; }
 .backup-actions button { padding:6px 10px; border:1px solid #dce3dc; }
 .folder-task-row { display:flex; align-items:center; gap:5px; min-width:0; }
 #taskTags .folder-task { flex:1; }
-.row .complete-task, #taskTags .complete-task {
+.row .restore-task, #restoreTask {
  flex:none; width:auto; padding:3px 6px; border:1px solid #c7d4c9;
  color:#365548; font-size:12px; white-space:nowrap;
 }
-.undo-space { display:inline-grid; width:28px; height:28px; margin-right:5px; vertical-align:middle; }
-#undoCompletion { padding:0; background:#265e4b; color:white; font-size:20px; line-height:1; }
+.row .complete-dot, #taskTags .complete-dot, .event .complete-dot {
+ display:inline-grid; place-items:center; flex:none; width:24px; height:24px;
+ padding:0; border:0; border-radius:50%; color:inherit; background:transparent;
+}
+.complete-dot::before {
+ content:''; width:11px; height:11px; border-radius:50%;
+ border:1.5px solid currentColor; box-sizing:border-box;
+}
+.complete-dot:disabled { cursor:default; }
+.complete-dot:disabled::before { background:currentColor; }
 .cell .event, .day-head .event { position:relative; }
 .event[data-task-id], .time-col .drag-preview { padding-inline-start:24px; }
 .event .calendar-check {
  position:absolute; z-index:1; left:5px; top:50%; transform:translateY(-50%);
- width:13px; height:13px; margin:0; accent-color:#285d49; cursor:pointer;
+ margin:0;
 }
+.event .complete-dot { width:16px; height:16px; }
 .time-col .calendar-check { top:2px; transform:none; }
 .event .event-open {
  display:block; width:100%; overflow:hidden; padding:0; border:0;

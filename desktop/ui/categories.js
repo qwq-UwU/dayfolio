@@ -1,13 +1,11 @@
 const stateLabels={inherit:'取消统一设置',shown:'统一显示',muted:'统一淡化',hidden:'统一隐藏'}
 let listLayout=localStorage.getItem('dayfolio.folderLayout')==='list'
-let currentFolder=localStorage.getItem('dayfolio.openFolder')||''
-let currentTag=null
-const expandedTags=new Set()
-if(!db.folders.some(f=>f.id===currentFolder))currentFolder=''
-function enterFolder(id){
- currentTag=null
- currentFolder=id
- localStorage.setItem('dayfolio.openFolder',id)
+let currentTag=localStorage.getItem('dayfolio.openTag')||''
+if(!db.cats.some((_,i)=>currentTag==='t:'+i))currentTag=''
+const expandedTags=new Set(db.expandedTags??[])
+function enterTag(key){
+ currentTag=key
+ localStorage.setItem('dayfolio.openTag',key)
  $('taskTags').scrollTop=0
  renderCategoryTags()
 }
@@ -17,10 +15,32 @@ for(const button of $('folderLayout').children)button.onclick=()=>{
  renderCategoryTags()
 }
 function orderedChildren(parent){
- const keys=db.folders.filter(f=>f.parent===parent).map(f=>'f:'+f.id)
- db.cats.forEach((_,i)=>{if((db.categoryParents[i]??'')===parent)keys.push('t:'+i)})
+ const keys=db.cats.map((_,i)=>'t:'+i).filter(key=>(db.categoryParents[key.slice(2)]??'')===parent)
  const saved=db.treeOrder[parent]??[]
  return [...saved.filter(key=>keys.includes(key)),...keys.filter(key=>!saved.includes(key))]
+}
+function tagAncestors(key){
+ const chain=[]
+ while(key){
+  chain.unshift(key)
+  key=db.categoryParents[key.slice(2)]??''
+ }
+ return chain
+}
+function tagOptions(select,parent='',exclude=null,forTask=false){
+ select.replaceChildren()
+ if(!forTask)select.add(new Option('顶层',''))
+ function visit(key,path){
+  for(const child of orderedChildren(key)){
+   const index=Number(child.slice(2))
+   if(index===exclude)continue
+   const name=path+db.cats[index]
+   select.add(new Option(name,forTask?index:child))
+   visit(child,name+' / ')
+  }
+ }
+ visit('','')
+ select.value=parent
 }
 function setTreeWidth(wide){
  document.body.classList.toggle('wide-tree',wide)
@@ -71,53 +91,11 @@ split.onkeydown=e=>{
 $('treeWidth').onclick=()=>setTreeWidth(!document.body.classList.contains('wide-tree'))
 setTreeWidth(localStorage.getItem('dayfolio.wideTree')==='true')
 function effectiveState(category){
- let state=db.categoryStates[category]??'shown'
- let id=db.categoryParents[category]
- while(id){
-  const folder=db.folders.find(item=>item.id===id)
-  if(!folder)break
-  if(folder.state!=='inherit')state=folder.state
-  id=folder.parent
+ for(const key of tagAncestors('t:'+category)){
+  const state=db.categoryStates[key.slice(2)]
+  if(state)return state
  }
- return state
-}
-function folderOptions(select,current='',exclude=''){
- select.replaceChildren(new Option('顶层', ''))
- function visit(parent,path){
-  for(const f of db.folders.filter(item=>item.parent===parent && item.id!==exclude)){
-   const label=path+f.name
-   select.add(new Option(label,f.id))
-   visit(f.id,label+' / ')
-  }
- }
- visit('','')
- select.value=current
-}
-let editingFolder=null
-function openFolder(folder=null){
- editingFolder=folder
- $('folderTitle').textContent=folder?'编辑文件夹':'新建文件夹'
- $('folderName').value=folder?.name??''
- $('folderName').setCustomValidity('')
- folderOptions($('folderParent'),folder?.parent??(listLayout?currentFolder:''),folder?.id)
- $('folderEditor').showModal()
- $('folderName').select()
-}
-$('newFolder').onclick=()=>openFolder()
-$('folderCancel').onclick=()=>$('folderEditor').close()
-$('folderName').oninput=$('folderParent').onchange=()=>$('folderName').setCustomValidity('')
-$('folderForm').onsubmit=e=>{
- e.preventDefault()
- const name=$('folderName').value.trim(),parent=$('folderParent').value
- if(!name || db.folders.some(f=>f!==editingFolder && f.parent===parent && f.name===name)){
-  $('folderName').setCustomValidity(name?'同一层已有同名文件夹':'请输入文件夹名称')
-  $('folderName').reportValidity()
-  return
- }
- if(editingFolder)Object.assign(editingFolder,{name,parent})
- else db.folders.push({id:crypto.randomUUID(),name,parent,state:'inherit'})
- $('folderEditor').close()
- save()
+ return 'shown'
 }
 function renderCategoryTags(){
  const host=$('taskTags')
@@ -136,14 +114,16 @@ function renderCategoryTags(){
    db.treeOrder[item.parent]=db.treeOrder[item.parent].filter(key=>key!==item.key)
   }
   db.treeOrder[dest.parent]=order
-  if(item.folder)item.folder.parent=dest.parent
-  else db.categoryParents[item.category]=dest.parent
-  if(dest.where==='inside' && dest.parent)db.folders.find(f=>f.id===dest.parent).closed=false
+  db.categoryParents[item.category]=dest.parent
+  if(dest.where==='inside' && dest.parent){
+   expandedTags.add(Number(dest.parent.slice(2)))
+   db.expandedTags=[...expandedTags]
+  }
   save()
  }
  function wireItem(row,item){
   wireDrop(row,fraction=>{
-   if(item.folder && fraction>=0.22 && fraction<=0.78)return {key:item.key,parent:item.folder.id,where:'inside'}
+   if(fraction>=0.28 && fraction<=0.72)return {key:item.key,parent:item.key,where:'inside'}
    return {key:item.key,parent:item.parent,where:fraction<0.5?'before':'after'}
   })
   bindPointerDrag(row,down=>{
@@ -155,18 +135,13 @@ function renderCategoryTags(){
    const reduced=matchMedia('(prefers-reduced-motion:reduce)').matches
    let active=false, dest=null, gapTarget=null, point=down, frame=0
    function allowed(target){
-    if(target.key===item.key)return false
-    if(!item.folder)return true
-    for(let id=target.parent;id;id=db.folders.find(f=>f.id===id)?.parent){
-     if(id===item.folder.id)return false
-    }
-    return !db.folders.some(f=>f!==item.folder && f.parent===target.parent && f.name===item.folder.name)
+    return target.key!==item.key && !tagAncestors(target.parent).includes(item.key)
    }
    function place(anchor,where){
     if(where==='before'?gap.nextElementSibling===anchor:gap.previousElementSibling===anchor)return
     const positions=new Map()
     if(!reduced){
-     for(const node of host.querySelectorAll('.task-tag,.folder-row')){
+     for(const node of host.querySelectorAll('.task-tag')){
       if(node!==row && node.offsetHeight)positions.set(node,node.getBoundingClientRect().top)
      }
     }
@@ -185,7 +160,7 @@ function renderCategoryTags(){
     const hit=document.elementFromPoint(x,y)
     if(!hit || !section.contains(hit))return null
     if(hit===gap)return gapTarget
-    const container=hit.closest('.folder-group,.tag-group')
+    const container=hit.closest('.tag-group')
     const node=container?.firstElementChild || hit.closest('[data-drop-target]')
     const resolve=targets.get(node)
     if(resolve){
@@ -256,35 +231,22 @@ function renderCategoryTags(){
  }
  wireDrop($('treeRoot'),()=>({parent:'',where:'inside'}))
  for(const button of $('folderLayout').children)button.setAttribute('aria-pressed',String((button.value==='list')===listLayout))
- host.classList.toggle('folder-list',listLayout)
  const path=$('folderPath')
  path.hidden=!listLayout
  path.replaceChildren()
- let inheritedState=null
  if(listLayout){
-  if(currentTag!==null)currentFolder=db.categoryParents[currentTag]??''
-  const chain=[]
-  let id=currentFolder
-  while(id){
-   const folder=db.folders.find(f=>f.id===id)
-   chain.unshift(folder)
-   id=folder.parent
-  }
-  for(const folder of [{id:'',name:'全部分类'},...chain]){
-   const link=el('button','',folder.name)
-   link.onclick=()=>enterFolder(folder.id)
-   if(folder.id===currentFolder && currentTag===null)link.setAttribute('aria-current','location')
-   wireDrop(link,()=>({parent:folder.id,where:'inside'}))
+  for(const key of ['',...tagAncestors(currentTag)]){
+   const link=el('button','',key?db.cats[key.slice(2)]:'全部标签')
+   link.onclick=()=>enterTag(key)
+   if(key===currentTag)link.setAttribute('aria-current','location')
+   wireDrop(link,()=>({parent:key,where:'inside'}))
    if(path.childElementCount)path.append(el('span','','›'))
    path.append(link)
   }
-  inheritedState=chain.find(f=>f.state!=='inherit')?.state
-  if(currentTag!==null)path.append(el('span','','›'),el('strong','',db.cats[currentTag]))
  }
  const marks={inherit:'↳',shown:'✓',muted:'−',hidden:''}
  function taskRows(category){
-  const tasks=db.items.filter(t=>t.cat===category).sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))
-  if(!tasks.length)return [el('p','empty-folder','暂无任务')]
+  const tasks=db.items.filter(t=>t.cat===category).sort(taskListOrder)
   return tasks.map(task=>{
    const button=el('button','folder-task'+(task.done?' finished':''))
    button.append(el('span','',task.name),el('small','',task.date+' · '+range(task)))
@@ -296,21 +258,23 @@ function renderCategoryTags(){
  }
  function categoryTag(name,i){
   const tag=el('div','task-tag')
-  const own=db.categoryStates[i]??'shown',state=effectiveState(i)
+  const own=db.categoryStates[i]??'inherit',state=effectiveState(i)
+  const hasChildren=orderedChildren('t:'+i).length>0
   tag.dataset.category=i
   styleCategory(tag,i)
-  const mark=el('button','state-circle',marks[state])
+  const mark=el('button','state-circle',hasChildren && own==='inherit'?'↳':marks[state])
+  mark.title=stateLabels[own]+' · 当前'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state]
+  mark.setAttribute('aria-label',name+'，'+mark.title)
   mark.setAttribute('aria-pressed',{shown:'true',muted:'mixed',hidden:'false'}[state])
-  mark.setAttribute('aria-label',name+'，'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[state])
   const open=el('button','tag-open')
   open.setAttribute('aria-expanded',String(!listLayout && expandedTags.has(i)))
   open.append(el('span','tag-name',name),el('span','tag-chevron',!listLayout && expandedTags.has(i)?'▾':'▸'))
   open.onclick=()=>{
-   if(listLayout)currentTag=i
+   if(listLayout){enterTag('t:'+i);return}
    else if(expandedTags.has(i))expandedTags.delete(i)
    else expandedTags.add(i)
-   host.scrollTop=listLayout?0:host.scrollTop
-   renderCategoryTags()
+   db.expandedTags=[...expandedTags]
+   save()
   }
   tag.append(mark,open)
   tag.oncontextmenu=e=>{
@@ -319,67 +283,30 @@ function renderCategoryTags(){
   }
   mark.onclick=()=>{
    if(own==='hidden')delete db.categoryStates[i]
-   else db.categoryStates[i]=own==='shown'?'muted':'hidden'
+   else db.categoryStates[i]=own==='inherit' && hasChildren?'shown':own==='muted'?'hidden':'muted'
    save()
    host.querySelector('[data-category="'+i+'"] .state-circle')?.focus({preventScroll:true})
   }
   return tag
  }
- function branch(parent,inherited){
-  const nodes=new Map()
-  for(const folder of db.folders.filter(f=>f.parent===parent)){
-   const group=el('div','folder-group'),row=el('div','folder-row')
-   const expand=el('button','folder-expand',folder.closed?'▸':'▾')
-   expand.setAttribute('aria-expanded',String(!folder.closed))
-   expand.setAttribute('aria-label',(folder.closed?'展开':'折叠')+folder.name)
-   expand.onclick=()=>{folder.closed=!folder.closed;save()}
-   const name=el('button','folder-name',folder.name)
-   name.title=listLayout?'打开文件夹':'编辑文件夹'
-   name.onclick=()=>listLayout?enterFolder(folder.id):openFolder(folder)
-   name.oncontextmenu=e=>{e.preventDefault();openFolder(folder)}
-   wireItem(row,{key:'f:'+folder.id,parent,folder})
-   if(listLayout){
-    const icon=el('span','folder-glyph')
-    icon.setAttribute('aria-hidden','true')
-    row.append(icon,name)
-   }else row.append(expand,name)
-   const control=el('button','state-circle',marks[folder.state])
-   control.title=stateLabels[folder.state]
-   control.setAttribute('aria-label',folder.name+'，'+control.title)
-   control.onclick=()=>{
-    folder.state={inherit:'shown',shown:'muted',muted:'hidden',hidden:'inherit'}[folder.state]
-    save()
-   }
-   row.prepend(control)
-   group.append(row)
-   if(inherited)group.append(el('small','inherited-state','上层'+stateLabels[inherited]))
-   if(!listLayout && !folder.closed){
-    const children=el('div','folder-children')
-    children.append(...branch(folder.id,inherited || (folder.state==='inherit'?null:folder.state)))
-    group.append(children)
-   }
-   nodes.set('f:'+folder.id,group)
-  }
-  db.cats.forEach((name,i)=>{
-   if((db.categoryParents[i]??'')!==parent)return
-   const tag=categoryTag(name,i)
-   wireItem(tag,{key:'t:'+i,parent,category:i})
-   if(inherited){
-    tag.title='上层'+stateLabels[inherited]+' · 标签自身'+{shown:'显示',muted:'淡化',hidden:'隐藏'}[db.categoryStates[i]??'shown']
-   }
-   const group=el('div','tag-group')
+ function contents(parent){
+  const nodes=orderedChildren(parent).map(key=>{
+   const i=Number(key.slice(2)),group=el('div','tag-group')
+   const tag=categoryTag(db.cats[i],i)
+   wireItem(tag,{key,parent,category:i})
    group.append(tag)
    if(!listLayout && expandedTags.has(i)){
     const children=el('div','folder-children')
-    children.append(...taskRows(i))
+    children.append(...contents(key))
     group.append(children)
    }
-   nodes.set('t:'+i,group)
+   return group
   })
-  return orderedChildren(parent).map(key=>nodes.get(key))
+  if(parent)nodes.push(...taskRows(Number(parent.slice(2))))
+  if(!nodes.length)nodes.push(el('p','empty-folder','暂无子标签或任务'))
+  return nodes
  }
- host.replaceChildren(...(listLayout && currentTag!==null?taskRows(currentTag):branch(listLayout?currentFolder:'',inheritedState)))
- if(listLayout && !host.childElementCount)host.append(el('p','empty-folder','此文件夹为空'))
+ host.replaceChildren(...contents(listLayout?currentTag:''))
  host.scrollTop=scroll
 }
 
@@ -404,8 +331,8 @@ for(const [i,color] of presetColors.entries()){
 }
 function openCategory(index=null){
  categoryIndex=index
- folderOptions($('categoryParent'),index===null && listLayout?currentFolder:db.categoryParents[index])
- $('categoryTitle').textContent=index===null?'新建分类':'编辑分类'
+ tagOptions($('categoryParent'),index===null && listLayout?currentTag:db.categoryParents[index],index)
+ $('categoryTitle').textContent=index===null?'新建标签':'编辑标签'
  $('categoryName').value=db.cats[index]??''
  $('categoryName').setCustomValidity('')
  // The native color input expects hex, including for older HSL-based defaults.
@@ -434,23 +361,29 @@ $('colorCancel').onclick=()=>$('colorEditor').close()
 $('addCat').onclick=$('newCategory').onclick=()=>openCategory()
 $('categoryCancel').onclick=()=>$('categoryEditor').close()
 $('categoryName').oninput=()=>$('categoryName').setCustomValidity('')
+$('categoryParent').onchange=()=>$('categoryName').setCustomValidity('')
 $('categoryForm').onsubmit=e=>{
  e.preventDefault()
  const name=$('categoryName').value.trim()
- if(!name || db.cats.some((other,i)=>other===name && i!==categoryIndex)){
-  $('categoryName').setCustomValidity(name?'已有同名分类':'请输入分类名称')
+ const index=categoryIndex??db.cats.length
+ const oldParent=db.categoryParents[index]??''
+ const parent=$('categoryParent').value
+ const renamedOrMoved=name!==db.cats[index] || oldParent!==parent
+ if(!name || (renamedOrMoved && db.cats.some((other,i)=>other===name && i!==index && (db.categoryParents[i]??'')===parent))){
+  $('categoryName').setCustomValidity(name?'已有同名标签':'请输入标签名称')
   $('categoryName').reportValidity()
   return
  }
- const index=categoryIndex??db.cats.length
- db.categoryParents[index]=$('categoryParent').value
+ if(oldParent!==parent && db.treeOrder[oldParent])db.treeOrder[oldParent]=db.treeOrder[oldParent].filter(k=>k!=='t:'+index)
+ db.categoryParents[index]=parent
+ if(parent){expandedTags.add(Number(parent.slice(2)));db.expandedTags=[...expandedTags]}
  db.cats[index]=name
  if(draftColor!==initialColor){
   db.categoryAccents??={}
   db.categoryAccents[index]=draftColor
  }
  if($('editor').open){
-  $('catField').replaceChildren(...db.cats.map((label,i)=>new Option(label,i)))
+  tagOptions($('catField'),index,null,true)
   $('catField').value=index
  }
  $('categoryEditor').close()

@@ -18,7 +18,6 @@ const seed = [
  [2,'制定本月计划',0],[4,'阅读与笔记',3],[6,'项目进度同步',1],[9,'设计方案评审',1],[11,'整理书单',3],[14,'周末徒步',2],[17,'产品迭代讨论',0],[19,'课程学习',3],[22,'家庭聚餐',2],[24,'更新项目文档',0],[26,'团队周会',1],[27,'月度工作复盘',0],[28,'公园慢跑',2]]
 let db = JSON.parse(localStorage.getItem('dayfolio.v1') || 'null') || {cats:['专注工作','会议沟通','生活日常','学习阅读'],items:seed.map(([day,name,cat],i)=>({id:String(i),name,cat,date:key(new Date(now.getFullYear(),now.getMonth(),day)),start:540+(i%5)*75,end:600+(i%5)*75,done:false}))}
 let mode='calendar',editing=null
-db.folders??=[]
 db.categoryParents??={}
 db.treeOrder??={}
 if(db.lists){
@@ -34,6 +33,47 @@ if(!db.categoryStates){
  }
  delete db.hiddenCategories
  for(const task of db.items)delete task.hidden
+}
+// Keep existing task category indices stable by appending the former folders.
+function migrateTagTree(data){
+ if(data.tagTreeVersion===2)return
+ const folders=data.folders??[]
+ const first=data.cats.length
+ const keys=new Map(folders.map((f,i)=>[f.id,'t:'+(first+i)]))
+ const parents={},order={},expanded=[]
+ data.categoryStates??={}
+ for(const [i,id] of Object.entries(data.categoryParents??{}))parents[i]=keys.get(id)??''
+ for(const [i,f] of folders.entries()){
+  const index=first+i
+  data.cats.push(f.name)
+  parents[index]=keys.get(f.parent)??''
+  if(f.state!=='inherit')data.categoryStates[index]=f.state
+  if(!f.closed)expanded.push(index)
+ }
+ for(const child of [...keys.values(),...Array.from({length:first},(_,i)=>'t:'+i)]){
+  const parent=parents[child.slice(2)]??''
+  ;(order[parent]??=[]).push(child)
+ }
+ for(const [oldParent,saved] of Object.entries(data.treeOrder??{})){
+  const parent=oldParent?keys.get(oldParent):''
+  if(!order[parent])continue
+  const children=new Set(order[parent])
+  const sorted=saved.map(key=>key.startsWith('f:')?keys.get(key.slice(2)):key)
+  order[parent]=[...new Set([...sorted.filter(key=>children.has(key)),...children])]
+ }
+ data.categoryParents=parents
+ data.treeOrder=order
+ data.expandedTags=expanded
+ delete data.folders
+ data.tagTreeVersion=2
+}
+if(db.tagTreeVersion!==2){
+ const previousFolder=localStorage.getItem('dayfolio.openFolder')
+ const folderIndex=(db.folders??[]).findIndex(f=>f.id===previousFolder)
+ const openIndex=db.cats.length+folderIndex
+ migrateTagTree(db)
+ localStorage.setItem('dayfolio.v1',JSON.stringify(db))
+ if(folderIndex>=0)localStorage.setItem('dayfolio.openTag','t:'+openIndex)
 }
 function categoryColors(category){
  const accent=db.categoryAccents?.[category]

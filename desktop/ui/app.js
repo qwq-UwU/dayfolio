@@ -1,44 +1,28 @@
-const undoButton=$('undoCompletion')
-let lastCompletion=null, undoTimer
-function clearCompletionUndo(){
- clearTimeout(undoTimer)
- lastCompletion=null
- undoButton.hidden=true
+function taskListOrder(a,b){
+ return Number(!!a.done)-Number(!!b.done) || (a.done && b.done ? (a.completedAt??0)-(b.completedAt??0) : 0)
+  || a.date.localeCompare(b.date) || (a.start??-1)-(b.start??-1)
 }
 function setTaskDone(task,done){
  if(Boolean(task.done)===done)return
  task.done=done
- if(done){
-  clearCompletionUndo()
-  lastCompletion={id:task.id,expires:Date.now()+10000}
-  undoButton.setAttribute('aria-label','撤回完成：'+task.name)
-  undoButton.hidden=false
-  undoTimer=setTimeout(clearCompletionUndo,10000)
- }else if(lastCompletion?.id===task.id)clearCompletionUndo()
-}
-undoButton.onclick=()=>{
- const recent=lastCompletion
- clearCompletionUndo()
- if(!recent || Date.now()>=recent.expires)return
- const task=db.items.find(t=>t.id===recent.id)
- if(task?.done){setTaskDone(task,false);save()}
+ if(done)task.completedAt=Date.now()
+ else delete task.completedAt
 }
 function completionControl(task,calendar=false){
- const control=calendar?el('input','calendar-check'):el('button','complete-task',task.done?'已完成':'完成')
- control.setAttribute('aria-label',(task.done?'取消完成：':'完成：')+task.name)
- const toggle=()=>{setTaskDone(task,!task.done);save()}
- if(calendar){
-  control.type='checkbox'
-  control.checked=Boolean(task.done)
-  control.onpointerdown=e=>e.stopPropagation()
-  control.onclick=e=>e.stopPropagation()
-  control.onchange=toggle
- }else{
-  control.type='button'
-  control.setAttribute('aria-pressed',String(Boolean(task.done)))
-  control.onclick=toggle
- }
+ const control=el('button',calendar?'complete-dot calendar-check':'complete-dot')
+ control.type='button'
+ control.setAttribute('aria-label',(task.done?'已完成：':'完成：')+task.name)
+ control.disabled=Boolean(task.done)
+ control.onpointerdown=e=>e.stopPropagation()
+ control.onclick=e=>{e.stopPropagation();setTaskDone(task,true);save()}
  return control
+}
+function restoreButton(task){
+ const button=el('button','restore-task','恢复任务')
+ button.type='button'
+ button.setAttribute('aria-label','恢复任务：'+task.name)
+ button.onclick=()=>{setTaskDone(task,false);save()}
+ return button
 }
 function render(){
  renderCategoryTags()
@@ -57,13 +41,13 @@ function render(){
  if(previous)timelineLeft=previous.scrollLeft
  view.replaceChildren();view.className=monthly?'grid':''
  if(!monthly){
-  for(const t of items.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.start??-1)-(b.start??-1))){
+  for(const t of items.slice().sort(taskListOrder)){
    const row=el('div',effectiveState(t.cat)==='muted'?'row muted-row':'row')
    const name=el('button',t.done?'finished':'',t.name)
    name.onclick=()=>edit(t)
-   const badge=el('span','category-badge',db.cats[t.cat])
+   const badge=el('span','category-badge',tagAncestors('t:'+t.cat).map(k=>db.cats[k.slice(2)]).join(' / '))
    styleCategory(badge,t.cat)
-   row.append(name,badge,el('small','',t.date+' '+range(t)),completionControl(t))
+   row.append(name,badge,el('small','',t.date+' '+range(t)),t.done?restoreButton(t):completionControl(t))
    view.append(row)
   }
   if(!items.length)view.append(el('p','','暂无任务'))
@@ -119,9 +103,11 @@ function edit(t,date,minute=540){
  $('endTime').setCustomValidity('')
  updateTimeFields()
  $('nameField').value=t?.name||'';$('dateField').value=t?.date||date||key(now)
- $('catField').replaceChildren(...db.cats.map((name,i)=>new Option(name,i)))
- $('catField').value=t?.cat??(listLayout?currentTag:null)??0
- $('done').checked=t?.done||false;$('del').hidden=!t;$('editor').showModal()}
+ tagOptions($('catField'),t?.cat??(listLayout && currentTag?Number(currentTag.slice(2)):0),null,true)
+ $('done').checked=Boolean(t?.done)
+ $('done').parentElement.hidden=Boolean(t?.done)
+ $('restoreTask').hidden=!t?.done
+ $('del').hidden=!t;$('editor').showModal()}
 $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim();if(!name){$('nameField').focus();return}const data={name,date:$('dateField').value,cat:+$('catField').value};if($('allDay').checked){data.start=null;data.end=null}
  else{
   data.start=minutes($('startTime').value)
@@ -133,7 +119,15 @@ $('form').onsubmit=e=>{e.preventDefault();const name=$('nameField').value.trim()
  if(!editing)db.items.push(task)
  setTaskDone(task,$('done').checked)
  $('editor').close();save()}
-$('del').onclick=()=>{if(confirm('删除这个任务？')){if(lastCompletion?.id===editing.id)clearCompletionUndo();db.items=db.items.filter(t=>t!==editing);$('editor').close();save()}}
+$('restoreTask').onclick=()=>{
+ if(!editing?.done)return
+ setTaskDone(editing,false)
+ $('done').checked=false
+ $('done').parentElement.hidden=false
+ $('restoreTask').hidden=true
+ save()
+}
+$('del').onclick=()=>{if(confirm('删除这个任务？')){db.items=db.items.filter(t=>t!==editing);$('editor').close();save()}}
 $('cancel').onclick=()=>$('editor').close();$('newTask').onclick=()=>edit(null,mode==='calendar'?key(cursor):key(now))
 for(const id of ['calendar','tasks'])$(id).onclick=()=>{mode=id;render()}
 for(const button of $('periods').children)button.onclick=()=>setPeriod(button.dataset.period)

@@ -214,7 +214,7 @@ function timelinePreview(body,grid){
     continue
    }
    if(!block){
-    block=el('div','event drag-preview')
+    block=el('div','event drag-preview'+(task.done?' finished':''))
     block.inert=true
     styleCategory(block,task.cat)
     block.append(completionControl(task,true),el('strong','',task.name),el('span','preview-time'))
