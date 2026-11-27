@@ -91,4 +91,16 @@
 .color-fields label { flex: 1; margin: 0; }
 #categoryColor { width: 48px; }
 .time-col .event.muted-category { cursor: pointer; }
-.muted-row { color: #626e66; }
+.event.muted-category, .muted-row { opacity: var(--muted-opacity); }
+.event.muted-category.finished { opacity: calc(.55 * var(--muted-opacity)); }
+.event.muted-category, .category-badge.muted-category, #taskTags .task-tag.muted-category {
+ border-color: transparent;
+ box-shadow: none;
+}
+#openSettings { float: right; padding: 3px 7px; }
+.visibility-label, .range-ends { display: flex; justify-content: space-between; align-items: center; }
+#mutedVisibility { width: 100%; padding: 0; margin: 16px 0 6px; accent-color: #285d49; }
+.range-ends { font-size: 12px; color: #68766e; }
+.sample-area { margin: 20px 0; padding: 10px; border: 1px solid #e1e6e0; border-radius: 7px; }
+#mutedSample { margin: 0; padding: 6px 9px; }
+@media(max-width:760px){aside footer:has(#openSettings){display:block;padding-top:6px}}

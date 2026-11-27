@@ -37,16 +37,11 @@ function categoryColors(category){
 }
 function styleCategory(node,category){
  const [bg,ink]=categoryColors(category)
- if(db.categoryStates[category]==='muted'){
-  node.classList.add('muted-category')
-  node.style.setProperty('--bg','color-mix(in srgb, '+bg+' 35%, white)')
-  node.style.setProperty('--ink','color-mix(in srgb, '+ink+' 50%, white)')
-  node.style.color='#58645d'
-  return
- }
+ node.classList.toggle('muted-category',db.categoryStates[category]==='muted')
  node.style.setProperty('--bg',bg)
  node.style.setProperty('--ink',ink)
  const custom=db.categoryAccents?.[category]
+ node.style.removeProperty('color')
  if(custom){
   const channels=custom.slice(1).match(/../g).map(hex=>{
    const s=parseInt(hex,16)/255
@@ -269,6 +264,27 @@ $('categoryForm').onsubmit=e=>{
  save()
  if(!$('editor').open)$('taskTags').children[index]?.focus()
 }
+const visibilitySlider=$('mutedVisibility')
+const storedVisibility=Number(localStorage.getItem('dayfolio.mutedVisibility')??30)
+visibilitySlider.value=Number.isFinite(storedVisibility)?storedVisibility:30
+function applyMutedVisibility(){
+ const value=visibilitySlider.valueAsNumber
+ document.documentElement.style.setProperty('--muted-opacity',String(0.05+0.95*value/100))
+ $('visibilityValue').value=value+'%'
+}
+applyMutedVisibility()
+visibilitySlider.oninput=()=>{
+ applyMutedVisibility()
+ localStorage.setItem('dayfolio.mutedVisibility',visibilitySlider.value)
+}
+$('openSettings').onclick=()=>{
+ const category=db.cats.findIndex((_,i)=>db.categoryStates[i]==='muted')
+ const sample=$('mutedSample')
+ styleCategory(sample,Math.max(0,category))
+ sample.classList.add('muted-category')
+ $('displaySettings').showModal()
+}
+$('closeSettings').onclick=()=>$('displaySettings').close()
 render()
 
 function toggleNight(){
